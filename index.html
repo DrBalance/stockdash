@@ -1032,6 +1032,30 @@ function render0DTE(d0, newSpot, marketState, preMarketPct, prevClose, timeStr) 
   </div>
 
   <div class="card">
+    <div class="card-title">OI 급변 Top5</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px" id="oi-top5-wrap">
+      <div>
+        <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;display:flex;align-items:center;gap:6px">
+          <span style="width:6px;height:6px;border-radius:50%;background:var(--blue);display:inline-block"></span>최근 15분
+        </div>
+        <div class="tbl-wrap"><table>
+          <thead><tr><th>Strike</th><th>구분</th><th>변화</th><th>현재 OI</th></tr></thead>
+          <tbody id="tbl-top5-15m"></tbody>
+        </table></div>
+      </div>
+      <div>
+        <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;display:flex;align-items:center;gap:6px">
+          <span style="width:6px;height:6px;border-radius:50%;background:var(--orange);display:inline-block"></span>누적 (당일)
+        </div>
+        <div class="tbl-wrap"><table>
+          <thead><tr><th>Strike</th><th>구분</th><th>변화</th><th>현재 OI</th></tr></thead>
+          <tbody id="tbl-top5-cum"></tbody>
+        </table></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
     <div class="card-title">OI 분포 + GEX (0DTE)</div>
     <div class="chart-controls">
       <span class="zoom-label">확대</span>
@@ -1047,7 +1071,7 @@ function render0DTE(d0, newSpot, marketState, preMarketPct, prevClose, timeStr) 
   <div class="card">
     <div class="card-title">스트라이크별 상세 — 현재가 ±10%</div>
     <div class="tbl-wrap"><table>
-      <thead><tr><th>Strike</th><th>Call OI</th><th>Δ Call</th><th>Put OI</th><th>Δ Put</th><th>GEX(M)</th><th>Call Vol</th><th>Put Vol</th><th>IV</th></tr></thead>
+      <thead><tr><th>Strike</th><th>Call OI</th><th>Δ15분</th><th>Δ누적</th><th>Put OI</th><th>Δ15분</th><th>Δ누적</th><th>GEX(M)</th><th>IV</th></tr></thead>
       <tbody id="tbl-body-0dte"></tbody>
     </table></div>
   </div>`;
@@ -1074,8 +1098,6 @@ function render0DTE(d0, newSpot, marketState, preMarketPct, prevClose, timeStr) 
     if (isPW)   tags += `<span class="tag tag-pw">Put Wall</span>`;
     if (isCW)   tags += `<span class="tag tag-cw">Call Wall</span>`;
     const gc = s.gex >= 0 ? '#3fb950' : '#f85149';
-
-    // OI 증감 포매터
     const fmtDiff = (d) => {
       if (d == null || d === 0) return '<span style="color:var(--text3)">—</span>';
       const sign = d > 0 ? '+' : '';
@@ -1084,10 +1106,12 @@ function render0DTE(d0, newSpot, marketState, preMarketPct, prevClose, timeStr) 
       const str = abs >= 1000 ? (abs/1000).toFixed(1)+'K' : abs.toString();
       return `<span style="color:${color};font-size:11px">${sign}${d > 0 ? str : '-'+str}</span>`;
     };
-
-    tr.innerHTML = `<td>$${s.strike}${tags}</td><td>${s.callOI.toLocaleString()}</td><td>${fmtDiff(s.callOIDiff)}</td><td>${s.putOI.toLocaleString()}</td><td>${fmtDiff(s.putOIDiff)}</td><td style="color:${gc};font-weight:600">${s.gex>=0?'+':''}${(s.gex/1e6).toFixed(2)}</td><td>${(s.callVol||0).toLocaleString()}</td><td>${(s.putVol||0).toLocaleString()}</td><td>${s.iv>0?(s.iv*100).toFixed(1)+'%':'—'}</td>`;
+    tr.innerHTML = `<td>$${s.strike}${tags}</td><td>${s.callOI.toLocaleString()}</td><td>${fmtDiff(s.callOIDiff15)}</td><td>${fmtDiff(s.callOIDiffCum)}</td><td>${s.putOI.toLocaleString()}</td><td>${fmtDiff(s.putOIDiff15)}</td><td>${fmtDiff(s.putOIDiffCum)}</td><td style="color:${gc};font-weight:600">${s.gex>=0?'+':''}${(s.gex/1e6).toFixed(2)}</td><td>${s.iv>0?(s.iv*100).toFixed(1)+'%':'—'}</td>`;
     tbody.appendChild(tr);
   });
+
+  // OI 급변 Top5 테이블 렌더
+  renderOITop5(strikes);
 
   // 실시간 판단 이벤트 — 프리마켓~장 마감(EST 16:00)까지만 업데이트
   const _nowEST = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
@@ -1111,8 +1135,53 @@ function render0DTE(d0, newSpot, marketState, preMarketPct, prevClose, timeStr) 
   // Greek 힘의 균형
   const force = calcForceBalance(vc, currentD, vixVal, vvixVal);
   renderForceSidebar(force);
-  // DOM innerHTML 교체 후 브라우저 렌더가 완료될 때까지 대기 (double-rAF)
-  requestAnimationFrame(() => requestAnimationFrame(() => renderVCChart()));
+  requestAnimationFrame(() => renderVCChart());
+}
+
+// ── OI 급변 Top5 테이블 렌더
+function renderOITop5(strikes) {
+  if (!strikes || strikes.length === 0) return;
+
+  const fmtDiff = (d) => {
+    if (d == null || d === 0) return '<span style="color:var(--text3)">—</span>';
+    const abs = Math.abs(d);
+    const str = abs >= 1000 ? (abs/1000).toFixed(1)+'K' : abs.toLocaleString();
+    const sign = d > 0 ? '+' : '-';
+    const color = d > 0 ? 'var(--green)' : 'var(--red)';
+    return `<span style="color:${color}">${sign}${str}</span>`;
+  };
+
+  const badgeCall = `<span class="tag tag-cw" style="font-size:10px;padding:1px 5px">Call</span>`;
+  const badgePut  = `<span class="tag tag-pw" style="font-size:10px;padding:1px 5px">Put</span>`;
+
+  // 15분 기준: callOIDiff15, putOIDiff15 절대값으로 정렬
+  const rows15 = [];
+  for (const s of strikes) {
+    if (s.callOIDiff15) rows15.push({ strike: s.strike, type: 'Call', diff: s.callOIDiff15, oi: s.callOI });
+    if (s.putOIDiff15)  rows15.push({ strike: s.strike, type: 'Put',  diff: s.putOIDiff15,  oi: s.putOI  });
+  }
+  rows15.sort((a,b) => Math.abs(b.diff) - Math.abs(a.diff));
+
+  // 누적 기준: callOIDiffCum, putOIDiffCum 절대값으로 정렬
+  const rowsCum = [];
+  for (const s of strikes) {
+    if (s.callOIDiffCum) rowsCum.push({ strike: s.strike, type: 'Call', diff: s.callOIDiffCum, oi: s.callOI });
+    if (s.putOIDiffCum)  rowsCum.push({ strike: s.strike, type: 'Put',  diff: s.putOIDiffCum,  oi: s.putOI  });
+  }
+  rowsCum.sort((a,b) => Math.abs(b.diff) - Math.abs(a.diff));
+
+  const makeRows = (rows) => rows.slice(0,5).map(r => `
+    <tr>
+      <td>$${r.strike}</td>
+      <td style="text-align:left">${r.type === 'Call' ? badgeCall : badgePut}</td>
+      <td>${fmtDiff(r.diff)}</td>
+      <td>${r.oi.toLocaleString()}</td>
+    </tr>`).join('') || `<tr><td colspan="4" style="color:var(--text3);text-align:center">데이터 없음</td></tr>`;
+
+  const t15  = document.getElementById('tbl-top5-15m');
+  const tCum = document.getElementById('tbl-top5-cum');
+  if (t15)  t15.innerHTML  = makeRows(rows15);
+  if (tCum) tCum.innerHTML = makeRows(rowsCum);
 }
 
 function jlScroll0(dir) {
@@ -1220,6 +1289,12 @@ function onWSPrices(prices) {
     spotEl.querySelector('.val').textContent = `$${newSpot.toFixed(2)}`;
     spotEl.querySelector('.lbl').textContent = `현재가${pctStr}`;
     spotEl.className = 'metric ' + (d.change > 0 ? 'green' : d.change < 0 ? 'red' : '');
+  }
+
+  // OI차트 현재가 수직선만 별도 업데이트 (차트 전체 재렌더 없이)
+  if (chartInst && newSpot) {
+    chartInst._spotPrice = newSpot;
+    chartInst.draw();
   }
 }
 
@@ -1711,15 +1786,9 @@ function destroyVCPanes() {
   if (vcPaneVC)  { try { vcPaneVC.destroy(); }  catch(_){} vcPaneVC  = null; }
   if (vcPaneVV)  { try { vcPaneVV.destroy(); }  catch(_){} vcPaneVV  = null; }
   if (vcPaneOBV) { try { vcPaneOBV.destroy(); } catch(_){} vcPaneOBV = null; }
-  // innerHTML 교체 대신 canvas 자체를 재생성 — 즉시 DOM에 반영됨
   [['vc-pane-vc','vc-pane-vc-wrap'],['vc-pane-vv','vc-pane-vv-wrap'],['vc-pane-obv','vc-pane-obv-wrap']].forEach(([canvasId, wrapId]) => {
     const wrapEl = document.getElementById(wrapId);
-    if (!wrapEl) return;
-    const old = wrapEl.querySelector('canvas');
-    if (old) wrapEl.removeChild(old);
-    const newCanvas = document.createElement('canvas');
-    newCanvas.id = canvasId;
-    wrapEl.appendChild(newCanvas);
+    if (wrapEl) wrapEl.innerHTML = `<canvas id="${canvasId}"></canvas>`;
   });
 }
 
@@ -1733,19 +1802,12 @@ function renderVCChart() {
   if (vcHistory.length === 0) {
     const bar = document.getElementById('vc-signal-bar');
     if (bar) {
-      document.getElementById('vc-signal-icon') && (document.getElementById('vc-signal-icon').textContent = '—');
+      document.getElementById('vc-signal-icon').textContent = '—';
       document.getElementById('vc-signal-text').textContent = '데이터 누적 중... (KST 17:00(EDT)/18:00(EST) 프리마켓부터 5분 Cron 자동 적재)';
       document.getElementById('vc-signal-text').style.color = 'var(--text3)';
     }
     return;
   }
-
-  // 데이터 검증 로그
-  const nonNullVanna = vcHistory.filter(h => h.vanna != null).length;
-  const nonNullCharm = vcHistory.filter(h => h.charm != null).length;
-  const nonNullVold  = vcHistory.filter(h => h.vold  != null).length;
-  console.log(`[renderVCChart] vcHistory=${vcHistory.length} | vanna=${nonNullVanna} charm=${nonNullCharm} vold=${nonNullVold}`);
-  console.log('[renderVCChart] 최신 5개:', vcHistory.slice(-5).map(h => ({ vanna: h.vanna, charm: h.charm, vold: h.vold, iso: h.iso })));
 
   // ── 전체 고정 시간축 (UTC ISO 기준으로 생성, 표시는 toKST 변환) ──
   // 프리마켓 시작: EST 04:00 = UTC 09:00 (EDT) 또는 UTC 08:00 (EST)
@@ -2745,10 +2807,11 @@ function buildChart(chartData, sp, flipZone, putWall, callWall, sfx) {
       }
     },
     plugins:[{
-      // ── 현재가 세로 점선 ──
+      // ── 현재가 세로 점선 (onWSPrices에서 chart._spotPrice 업데이트 시 실시간 반영)
       id: 'spotLine',
       afterDraw(chart) {
-        const spotIdx = chartData.findIndex(s => Math.abs(s.strike - sp) < 0.5);
+        const sp2 = chart._spotPrice ?? sp;
+        const spotIdx = chartData.findIndex(s => Math.abs(s.strike - sp2) < 0.5);
         if (spotIdx < 0) return;
         const { ctx, chartArea } = chart;
         const x = chart.scales.x.getPixelForValue(spotIdx);
@@ -2766,7 +2829,7 @@ function buildChart(chartData, sp, flipZone, putWall, callWall, sfx) {
         ctx.font = 'bold 11px monospace';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'bottom';
-        ctx.fillText('$' + sp.toFixed(0), x, chartArea.top - 2);
+        ctx.fillText('$' + sp2.toFixed(0), x, chartArea.top - 2);
         ctx.restore();
       }
     },{
