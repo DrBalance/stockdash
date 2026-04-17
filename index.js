@@ -388,6 +388,13 @@ app.get('/api/strikes', (req, res) => {
   if (!data) return res.json({ symbol: sym, strikes: [], note: 'no_data_yet' });
   res.json({ symbol: sym, strikes: data });
 });
+app.get('/api/gex0dte', (req, res) => {
+  const sym = (req.query.symbol || 'SPY').toUpperCase();
+  const greeks  = state.greeks[sym];
+  const strikes = state.strikes[sym];
+  if (!greeks || !strikes) return res.json({ error: 'no_data_yet', symbol: sym });
+  res.json({ ...greeks, strikes, source: 'cron_computed' });
+});
 app.get('/api/vc_history', (req, res) => {
   const sym = (req.query.symbol || 'SPY').toUpperCase();
   res.json({ symbol: sym, date: todayEST(), history: state.vcHistory[sym] || [] });
