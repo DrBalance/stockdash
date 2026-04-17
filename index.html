@@ -1,0 +1,2884 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>딜러 리스크 대시보드 v7.2</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d1117;--bg2:#161b22;--bg3:#21262d;--border:#30363d;
+  --text:#e6edf3;--text2:#8b949e;--text3:#6e7681;
+  --blue:#58a6ff;--blue-dim:#1f6feb;--green:#3fb950;--red:#f85149;
+  --yellow:#d29922;--orange:#f0883e;--purple:#bc8cff;
+  --font:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  --mono:'SF Mono','Fira Code','Consolas',monospace;
+}
+html,body{width:100%;min-height:100vh;background:var(--bg);color:var(--text);font-family:var(--font);font-size:15px}
+
+.header{display:flex;align-items:center;justify-content:space-between;padding:12px 28px;border-bottom:1px solid var(--border);background:var(--bg2);position:sticky;top:0;z-index:100}
+.header-left{display:flex;align-items:center;gap:14px}
+.logo{font-size:18px;font-weight:700;letter-spacing:-.3px}
+.logo span{color:var(--orange)}
+.status-dot{width:8px;height:8px;border-radius:50%;background:var(--text3);flex-shrink:0}
+.status-dot.live{background:var(--green);box-shadow:0 0 7px var(--green)}
+.status-dot.updating{background:var(--yellow);animation:pulse 1s infinite}
+.status-text{font-size:13px;color:var(--text2)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+@keyframes glow-green{0%,100%{box-shadow:0 0 4px #3fb950,0 0 8px #3fb950}50%{box-shadow:0 0 8px #3fb950,0 0 18px #3fb950,0 0 24px #3fb950}}
+@keyframes glow-red{0%,100%{box-shadow:0 0 4px #f85149,0 0 8px #f85149}50%{box-shadow:0 0 8px #f85149,0 0 18px #f85149,0 0 24px #f85149}}
+@keyframes glow-yellow{0%,100%{box-shadow:0 0 4px #d29922,0 0 8px #d29922}50%{box-shadow:0 0 8px #d29922,0 0 16px #d29922}}
+@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+
+.ctrl-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 28px;border-bottom:1px solid var(--border);background:var(--bg2)}
+select,button{font-family:var(--font);font-size:14px}
+.sym-select,.exp-select{background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:7px 12px;cursor:pointer}
+.exp-select{min-width:180px}
+.load-btn{background:var(--blue-dim);color:var(--blue);border:1px solid var(--blue-dim);border-radius:6px;padding:7px 22px;cursor:pointer;font-weight:600;transition:all .15s}
+.load-btn:hover:not(:disabled){background:var(--blue);color:#000}
+.load-btn:disabled{opacity:.4;cursor:not-allowed}
+.auto-btn{background:var(--bg3);color:var(--text3);border:1px solid var(--border);border-radius:6px;padding:7px 14px;cursor:pointer;font-size:13px;transition:all .2s;display:flex;align-items:center;gap:6px}
+.auto-btn.on{border-color:rgba(63,185,80,.5);color:var(--green);background:rgba(63,185,80,.08)}
+.auto-btn .dot{width:6px;height:6px;border-radius:50%;background:currentColor}
+.auto-btn.on .dot{animation:pulse 1s infinite}
+.ctrl-spacer{flex:1}
+.data-time{font-size:12px;color:var(--text3);font-family:var(--mono)}
+
+.main{width:100%;padding:20px 28px;display:flex;flex-direction:column;gap:20px}
+.card{width:100%;background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:22px 28px}
+.card-title{font-size:12px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.09em;margin-bottom:16px}
+
+.regime-bar{display:flex;align-items:center;gap:10px;padding:12px 16px;border-radius:7px;margin-bottom:16px;font-size:15px;font-weight:600}
+.regime-bar.positive{background:rgba(63,185,80,.1);border:1px solid rgba(63,185,80,.25);color:#7ee787}
+.regime-bar.negative{background:rgba(248,81,73,.1);border:1px solid rgba(248,81,73,.25);color:#ffa198}
+
+.alarm{display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:7px;margin-bottom:7px;font-size:14px;font-weight:500}
+.alarm::before{content:'';width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.alarm.red{background:rgba(248,81,73,.1);border:1px solid rgba(248,81,73,.3);color:#ffa198}
+.alarm.red::before{background:var(--red);box-shadow:0 0 5px var(--red)}
+.alarm.yellow{background:rgba(210,153,34,.1);border:1px solid rgba(210,153,34,.3);color:#e3b341}
+.alarm.yellow::before{background:var(--yellow)}
+.alarm.green{background:rgba(63,185,80,.1);border:1px solid rgba(63,185,80,.3);color:#7ee787}
+.alarm.green::before{background:var(--green)}
+
+.metrics{display:grid;grid-template-columns:repeat(10,1fr);gap:10px;margin-top:16px}
+@media(max-width:1400px){.metrics{grid-template-columns:repeat(5,1fr)}}
+@media(max-width:700px){.metrics{grid-template-columns:repeat(2,1fr)}}
+.metric{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:14px 12px;text-align:center;transition:border-color .3s}
+.metric .val{font-size:20px;font-weight:700;color:var(--text);margin-bottom:4px;font-family:var(--mono)}
+.metric .lbl{font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em}
+.metric.red .val{color:var(--red)}.metric.green .val{color:var(--green)}
+.metric.yellow .val{color:var(--yellow)}.metric.blue .val{color:var(--blue)}
+.metric.orange .val{color:var(--orange)}.metric.purple .val{color:var(--purple)}
+.metric.warn .val{color:var(--yellow)}.metric.danger .val{color:var(--red)}
+.metric.pre-market{border-color:rgba(188,140,255,.5)}
+.metric.post-market{border-color:rgba(240,136,62,.5)}
+
+.hedge-section{margin-top:20px}
+.hedge-title{font-size:12px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px}
+.hedge-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media(max-width:700px){.hedge-grid{grid-template-columns:1fr}}
+.hedge-col-label{font-size:12px;color:var(--text3);margin-bottom:8px;font-weight:600}
+.hedge-row{display:flex;align-items:center;gap:9px;padding:9px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg3);margin-bottom:6px;transition:background .15s}
+.hedge-row:hover{background:#252b33}
+.hedge-rank{font-size:11px;font-weight:700;width:18px;text-align:center;flex-shrink:0}
+.hedge-rank.r1{color:var(--red)}.hedge-rank.r2{color:var(--orange)}.hedge-rank.r3{color:var(--yellow)}.hedge-rank.r4{color:var(--text2)}
+.hedge-strike{font-size:15px;font-weight:700;font-family:var(--mono);color:var(--text);flex:1}
+.hedge-dist{font-size:11px;color:var(--text2);width:44px;text-align:right;flex-shrink:0}
+.hedge-bar-wrap{width:70px;height:5px;background:var(--bg);border-radius:3px;flex-shrink:0}
+.hedge-bar{height:5px;border-radius:3px}
+.hedge-bar.up{background:var(--green)}.hedge-bar.dn{background:var(--red)}
+.hedge-pressure{font-size:11px;color:var(--text3);font-family:var(--mono);width:46px;text-align:right;flex-shrink:0}
+
+/* ── 통합 상황판단 패널 ── */
+.judgment-panel{margin-top:16px;border-radius:8px;border:1px solid rgba(88,166,255,.2);background:rgba(88,166,255,.04);overflow:hidden}
+.judgment-fixed{padding:16px 18px;border-bottom:1px solid rgba(48,54,61,.8)}
+.judgment-fixed-title{font-size:11px;font-weight:700;color:var(--blue);text-transform:uppercase;letter-spacing:.08em;margin-bottom:12px;display:flex;align-items:center;gap:6px}
+.judgment-fixed-title::before{content:'';width:6px;height:6px;border-radius:50%;background:var(--blue)}
+.judgment-item{display:flex;align-items:flex-start;gap:10px;margin-bottom:10px;font-size:13px;line-height:1.6;color:var(--text2)}
+.judgment-item:last-child{margin-bottom:0}
+.judgment-item .ji-icon{flex-shrink:0;font-size:14px;margin-top:1px}
+.judgment-item .ji-text b{color:var(--text)}
+.judgment-item.ji-green .ji-icon{color:var(--green)}
+.judgment-item.ji-red .ji-icon{color:var(--red)}
+.judgment-item.ji-yellow .ji-icon{color:var(--yellow)}
+.judgment-item.ji-blue .ji-icon{color:var(--blue)}
+.judgment-item.ji-orange .ji-icon{color:var(--orange)}
+
+.judgment-live{padding:14px 18px 0;position:relative}
+.judgment-live-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.judgment-live-title{font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;display:flex;align-items:center;gap:6px}
+.judgment-live-title .live-dot{width:6px;height:6px;border-radius:50%;background:var(--green);animation:pulse 1.5s infinite}
+.judgment-live-nav{display:flex;gap:4px}
+.jl-nav-btn{background:var(--bg3);border:1px solid var(--border);border-radius:4px;color:var(--text3);font-size:13px;width:26px;height:26px;display:flex;align-items:center;justify-content:center;cursor:pointer;user-select:none;-webkit-user-select:none;touch-action:manipulation}
+.jl-nav-btn:active{background:var(--bg2)}
+.judgment-live-scroll{max-height:220px;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;padding-bottom:14px}
+.judgment-live-scroll::-webkit-scrollbar{width:3px}
+.judgment-live-scroll::-webkit-scrollbar-track{background:transparent}
+.judgment-live-scroll::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+.live-event{display:flex;gap:10px;padding:7px 0;border-bottom:1px solid rgba(48,54,61,.5);font-size:12px;line-height:1.5}
+.live-event:last-child{border-bottom:none}
+.live-event .le-time{color:var(--text3);font-family:var(--mono);flex-shrink:0;min-width:52px}
+.live-event .le-msg{color:var(--text2)}
+.live-event.le-warn .le-msg{color:#e3b341}
+.live-event.le-danger .le-msg{color:#ffa198}
+.live-event.le-good .le-msg{color:#7ee787}
+.live-event.le-info .le-msg{color:#9ecbff}
+
+/* ── Greek 메트릭 카드 ── */
+.greek-metric-card{flex:1;min-width:130px;padding:10px 14px;background:var(--bg3);border-radius:8px;border:1px solid var(--border)}
+.gmc-header{display:flex;align-items:center;gap:6px;margin-bottom:6px}
+.gmc-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.gmc-name{font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.07em;flex:1}
+.gmc-signal{font-size:16px;line-height:1}
+.gmc-value{font-size:18px;font-weight:700;font-family:var(--mono);letter-spacing:-.5px;margin-bottom:3px}
+.gmc-desc{font-size:11px;color:var(--text3);line-height:1.4}
+
+/* ── Greek 힘의 균형 패널 (레거시, 숨김) ── */
+.vc-panel-wrap{display:flex;gap:0;border:1px solid var(--border);border-radius:10px;overflow:hidden;background:var(--bg2)}
+.force-sidebar{width:220px;flex-shrink:0;padding:18px 16px;background:var(--bg3);border-right:1px solid var(--border)}
+.force-title{font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:16px}
+.force-item{margin-bottom:16px}
+.force-label{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+.force-name{font-size:12px;font-weight:600;color:var(--text2)}
+.force-pct{font-size:12px;font-weight:700;font-family:var(--mono)}
+.force-bar-bg{height:8px;background:var(--bg);border-radius:4px;overflow:hidden;position:relative}
+.force-bar-fill{height:100%;border-radius:4px;transition:width .5s ease,background .5s ease}
+.force-status{font-size:11px;color:var(--text3);margin-top:4px}
+.force-divider{height:1px;background:var(--border);margin:14px 0}
+.force-summary{font-size:12px;line-height:1.6;color:var(--text2)}
+.force-summary b{color:var(--text)}
+
+.vc-chart-area{flex:1;padding:18px 20px;min-width:0}
+.vc-chart-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px}
+.vc-chart-title{font-size:12px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.08em}
+.vc-tabs{display:flex;gap:6px}
+.vc-tab{font-size:12px;padding:4px 10px;border-radius:5px;border:1px solid var(--border);background:transparent;color:var(--text3);cursor:pointer;font-family:var(--font)}
+.vc-tab.active{background:var(--blue-dim);color:var(--blue);border-color:var(--blue-dim)}
+.vc-zoom-row{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.vc-zoom-label{font-size:11px;color:var(--text3)}
+.vc-zoom-slider{-webkit-appearance:none;width:120px;height:4px;border-radius:2px;background:var(--bg3);outline:none;cursor:pointer}
+.vc-zoom-slider::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:12px;border-radius:50%;background:var(--blue);cursor:pointer}
+.vc-zoom-val{font-size:11px;color:var(--blue);font-family:var(--mono);min-width:24px}
+.vc-range-btn{font-size:11px;padding:3px 8px;border-radius:4px;border:1px solid var(--border);background:var(--bg3);color:var(--text3);cursor:pointer;font-family:var(--font);transition:all .15s}
+.vc-range-btn:hover{color:var(--text2);border-color:var(--text3)}
+.vc-range-btn.active{background:var(--blue-dim);color:var(--blue);border-color:var(--blue-dim)}
+.vc-scroll-wrap{overflow-x:auto;overflow-y:hidden;border-radius:6px;border:1px solid var(--border)}
+.vc-scroll-wrap::-webkit-scrollbar{height:4px}
+.vc-scroll-wrap::-webkit-scrollbar-track{background:var(--bg3)}
+.vc-scroll-wrap::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+.vc-chart-inner{position:relative;height:220px;min-width:100%}
+.vc-empty{text-align:center;padding:60px 0;color:var(--text3);font-size:13px}
+
+/* ── 차트 ── */
+.chart-controls{display:flex;align-items:center;gap:12px;margin-bottom:10px;flex-wrap:wrap}
+.zoom-label{font-size:12px;color:var(--text3)}
+.zoom-slider{-webkit-appearance:none;width:160px;height:4px;border-radius:2px;background:var(--bg3);outline:none;cursor:pointer}
+.zoom-slider::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:var(--blue);cursor:pointer}
+.zoom-val{font-size:12px;color:var(--blue);font-family:var(--mono);min-width:30px}
+.scroll-hint{font-size:12px;color:var(--text3)}
+.chart-scroll-wrap{overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;border-radius:6px;border:1px solid var(--border)}
+.chart-scroll-wrap::-webkit-scrollbar{height:5px}
+.chart-scroll-wrap::-webkit-scrollbar-track{background:var(--bg3)}
+.chart-scroll-wrap::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+.chart-inner{position:relative;height:460px;min-width:100%}
+
+.tbl-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse}
+th{font-size:13px;color:var(--text3);font-weight:500;text-align:right;padding:10px 14px;border-bottom:1px solid var(--border);white-space:nowrap}
+th:first-child{text-align:left}
+td{padding:8px 14px;text-align:right;font-size:13px;border-bottom:1px solid rgba(48,54,61,.5);color:var(--text2);font-family:var(--mono)}
+td:first-child{text-align:left;font-family:var(--font);font-weight:600;color:var(--text)}
+tr:hover td{background:rgba(255,255,255,.02)}
+tr.cur td{background:rgba(88,166,255,.07)}
+tr.flip td{background:rgba(240,136,62,.06)}
+.tag{display:inline-block;font-size:10px;padding:2px 6px;border-radius:3px;margin-left:5px;font-weight:700}
+.tag-cur{background:rgba(88,166,255,.2);color:var(--blue)}
+.tag-flip{background:rgba(240,136,62,.2);color:var(--orange)}
+.tag-pw{background:rgba(248,81,73,.2);color:var(--red)}
+.tag-cw{background:rgba(63,185,80,.2);color:var(--green)}
+
+.empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:90px 24px;gap:16px;color:var(--text3)}
+.empty-icon{font-size:44px;opacity:.35}
+.empty-title{font-size:17px;font-weight:500;color:var(--text2)}
+.empty-sub{font-size:14px;text-align:center;line-height:1.7}
+.spinner{width:38px;height:38px;border:2px solid var(--border);border-top-color:var(--blue);border-radius:50%;animation:spin .7s linear infinite}
+/* ── 탭 네비게이션 ── */
+.tab-nav{display:flex;align-items:center;gap:0;border-bottom:1px solid var(--border);background:var(--bg2);padding:0 28px}
+.tab-btn{padding:11px 20px;font-size:14px;font-weight:600;color:var(--text3);border:none;background:none;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;transition:all .15s;letter-spacing:-.2px}
+.tab-btn:hover{color:var(--text2)}
+.tab-btn.active{color:var(--blue);border-bottom-color:var(--blue)}
+.tab-btn .tab-badge{display:inline-block;font-size:10px;font-weight:700;padding:1px 5px;border-radius:3px;margin-left:6px;background:rgba(63,185,80,.15);color:var(--green);vertical-align:middle}
+.tab-btn.active .tab-badge{background:rgba(88,166,255,.15);color:var(--blue)}
+@keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-left">
+    <div class="logo">Dr.<span>Balance</span> GEX</div>
+    <div class="status-dot" id="status-dot"></div>
+    <div class="status-text" id="status-text">대기 중</div>
+  </div>
+  <div style="display:flex;align-items:center;gap:10px">
+    <div style="font-size:11px;color:var(--text3);font-family:var(--mono);background:var(--bg3);padding:2px 7px;border-radius:4px;border:1px solid var(--border)">v8.0 · <span style="color:#3fb950">Railway · WS</span></div>
+    <div style="font-size:12px;color:var(--text3);font-family:var(--mono)" id="ws-status-text">연결 중...</div>
+    <div class="data-time" id="data-time"></div>
+    <a href="/admin.html"
+      style="color:var(--text3);text-decoration:none;font-size:12px;
+             padding:4px 10px;border:1px solid var(--border);border-radius:5px;
+             background:var(--bg3);white-space:nowrap"
+      onmouseover="this.style.borderColor='var(--blue)';this.style.color='var(--blue)'"
+      onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text3)'">
+      ⚙️ 종목설정
+    </a>
+  </div>
+</div>
+
+<!-- 탭 네비게이션 -->
+<div class="tab-nav">
+  <button class="tab-btn active" id="tab-0dte" onclick="switchTab('0dte')">
+    0DTE 메인 <span class="tab-badge">LIVE</span>
+  </button>
+  <button class="tab-btn" id="tab-date" onclick="switchTab('date')">
+    날짜 조회
+  </button>
+  <button class="tab-btn" id="tab-screener" onclick="switchTab('screener')">
+    📡 스크리너
+  </button>
+</div>
+
+<!-- 0DTE 컨트롤 바 -->
+<div class="ctrl-bar" id="ctrl-0dte">
+  <select class="sym-select" id="sym-select-0dte" onchange="load0DTE()">
+    <option value="SPY">SPY</option>
+    <option value="QQQ">QQQ</option>
+    <option value="IWM">IWM</option>
+  </select>
+  <button class="auto-btn on" id="auto-btn-0dte" onclick="toggle0DTEAuto()">
+    <div class="dot"></div><span id="auto-label-0dte">자동갱신 ON</span>
+  </button>
+  <div class="ctrl-spacer"></div>
+  <div class="data-time" id="data-time-0dte">서버 계산 대기 중...</div>
+</div>
+
+<!-- 날짜 조회 컨트롤 바 -->
+<div class="ctrl-bar" id="ctrl-date" style="display:none">
+  <select class="sym-select" id="sym-select" onchange="allOptions=[];loadExpirations()">
+    <option value="SPY">SPY</option>
+    <option value="QQQ">QQQ</option>
+    <option value="IWM">IWM</option>
+    <option value="_SPX">SPX</option>
+    <option value="_NDX">NDX</option>
+  </select>
+  <select class="exp-select" id="exp-select"><option value="">로드 중...</option></select>
+  <button class="load-btn" id="load-btn" onclick="loadData()">⬇ 데이터 로드</button>
+  <div class="ctrl-spacer"></div>
+  <div class="data-time" id="data-time"></div>
+</div>
+
+<!-- 0DTE 메인 영역 -->
+<div id="area-0dte">
+  <div class="main" id="main-area-0dte">
+    <div class="card">
+      <div class="empty-state">
+        <div class="spinner"></div>
+        <div class="empty-title">서버에서 0DTE 데이터 수신 중...</div>
+        <div class="empty-sub">Cron이 5분마다 자동 계산합니다. 첫 로드는 잠시 걸릴 수 있습니다</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 날짜 조회 영역 -->
+
+<!-- 스크리너 영역 -->
+<div id="area-screener" style="display:none">
+  <div class="main">
+    <div class="card" style="padding:20px 24px">
+
+      <!-- 볼린저 신호 패널 -->
+      <div id="boll-panel" style="margin-bottom:20px">
+        <div style="color:var(--text3);font-size:12px;padding:8px">로딩 중...</div>
+      </div>
+
+      <!-- 헤더 -->
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+        <div style="font-size:16px;font-weight:700;color:var(--text1)">
+          📡 Options Screener
+          <span style="font-size:12px;font-weight:400;color:var(--text3);margin-left:8px">
+            기관 플로우 이상 감지
+          </span>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <select id="screener-type" onchange="loadScreener()"
+            style="background:var(--bg3);border:1px solid var(--border);color:var(--text2);
+                   padding:4px 10px;border-radius:5px;font-size:13px;cursor:pointer">
+            <option value="all">전체</option>
+            <option value="etf">ETF만</option>
+            <option value="stock">개별주만</option>
+          </select>
+          <button onclick="loadScreener()"
+            style="background:var(--blue-dim);color:var(--blue);border:1px solid var(--blue-dim);
+                   padding:4px 14px;border-radius:5px;font-size:13px;cursor:pointer;font-weight:600">
+            새로고침
+          </button>
+          <span id="screener-time" style="font-size:12px;color:var(--text3)"></span>
+        </div>
+      </div>
+
+      <!-- 범례 -->
+      <div style="display:flex;gap:16px;margin-bottom:16px;font-size:12px;color:var(--text3)">
+        <span>🟢 Call 쏠림 (z>2)</span>
+        <span>🔴 Put 쏠림 (z<-2)</span>
+        <span>🟡 중립</span>
+        <span style="margin-left:auto">IV Skew: <span style="color:var(--green)">█ Call skew (양수)</span> · <span style="color:var(--red)">█ Put skew (음수)</span> · 중앙선=0</span>
+      </div>
+
+      <!-- 결과 영역 -->
+      <div id="screener-result">
+        <div style="text-align:center;padding:40px;color:var(--text3)">
+          데이터 로딩 중...
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<div id="area-date" style="display:none">
+  <div class="main" id="main-area">
+    <div class="card">
+      <div class="empty-state">
+        <div class="empty-icon">◈</div>
+        <div class="empty-title">심볼 선택 후 데이터 로드를 눌러주세요</div>
+        <div class="empty-sub">만기일 선택 → 실시간 CBOE 데이터 조회</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const PROXY    = 'https://drbalance-stock-dashboard-production.up.railway.app';
+const API_BASE = 'https://drbalance-stock-dashboard-production.up.railway.app';
+const WS_URL   = 'wss://drbalance-stock-dashboard-production.up.railway.app';
+let chartInst = null, chartInstDate = null;
+let allOptions = [], spotPrice = 0, vixVal = null, vvixVal = null;
+let currentStrikes = [], currentD = null;
+let liveEvents = [];
+let priceHistory = [];
+let vcHistory = []; // {time, vanna, charm, gex, vix, spot}
+let vcActiveTab = 'vanna';
+let vcZoom = 1;
+let zoomLevel = 1;
+let prevSpot = null;
+
+// 0DTE 전용 상태
+let auto0DTEInterval = null;
+let current0DTESym = 'SPY';
+
+// ── 탭 전환 ──
+function switchTab(tab) {
+  // 탭 버튼 상태 업데이트
+  ['0dte','date','screener'].forEach(t => {
+    const el = document.getElementById('tab-' + t);
+    if (el) el.className = 'tab-btn' + (t === tab ? ' active' : '');
+  });
+  // 컨트롤 바
+  const ctrl0 = document.getElementById('ctrl-0dte');
+  const ctrlD = document.getElementById('ctrl-date');
+  if (ctrl0) ctrl0.style.display = tab === '0dte' ? '' : 'none';
+  if (ctrlD) ctrlD.style.display = tab === 'date' ? '' : 'none';
+  // 콘텐츠 영역
+  const area0 = document.getElementById('area-0dte');
+  const areaD = document.getElementById('area-date');
+  const areaS = document.getElementById('area-screener');
+  if (area0) area0.style.display = tab === '0dte'     ? '' : 'none';
+  if (areaD) areaD.style.display = tab === 'date'     ? '' : 'none';
+  if (areaS) areaS.style.display = tab === 'screener' ? '' : 'none';
+  // 날짜 탭 최초 진입 시 만기 목록 로드
+  if (tab === 'date' && !allOptions.length) loadExpirations();
+  // 스크리너 탭 최초 진입 시 데이터 로드
+  if (tab === 'screener') { loadBollinger(); loadScreener(); }
+  // 탭 복귀 시 GEX 차트 복원
+  if (tab === '0dte' && currentD) {
+    requestAnimationFrame(() => {
+      const chartData = currentStrikes.filter(
+        s => Math.abs(s.strike - currentD.spotPrice) / currentD.spotPrice < 0.08
+      );
+      buildChart(chartData, currentD.spotPrice, currentD.flipZone, currentD.putWall, currentD.callWall, '');
+      if (vcHistory.length > 0) renderVCChart();
+    });
+  }
+  if (tab === 'date' && currentD) {
+    requestAnimationFrame(() => {
+      const chartData = currentStrikes.filter(
+        s => Math.abs(s.strike - currentD.spotPrice) / currentD.spotPrice < 0.08
+      );
+      buildChart(chartData, currentD.spotPrice, currentD.flipZone, currentD.putWall, currentD.callWall, '-date');
+    });
+  }
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 0DTE 메인 — 서버 계산 결과 수신 & 렌더
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 스크리너 — 데이터 로드 & 렌더
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+let screenerLoaded = false;
+
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 볼린저 밴드 신호 카드
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+async function loadBollinger() {
+  const el = document.getElementById('boll-panel');
+  if (!el) return;
+  el.innerHTML = '<div style="color:var(--text3);font-size:12px;padding:8px">로딩 중...</div>';
+
+  try {
+    const res  = await fetch(API_BASE + '/api/bollinger');
+    const data = await res.json();
+
+    if (data.error || data.total === 0) {
+      el.innerHTML = '<div style="color:var(--text3);font-size:12px;padding:8px">데이터 수집 후 표시됩니다</div>';
+      return;
+    }
+    const bollToday = new Date().toISOString().split('T')[0];
+    const bollLabel = data.date === bollToday ? '' : ` · 📅 ${data.date} 기준`;
+
+    const { signals, sector_summary } = data;
+
+    // 섹터 요약 히트맵
+    const sectorKr = {
+      broad_market:'시장', technology:'기술', energy:'에너지',
+      financial:'금융', healthcare:'헬스', industrial:'산업재',
+      utilities:'유틸', staples:'필수소비재', discretionary:'임의소비재',
+      commodity_metal:'귀금속', commodity_agri:'농산물',
+      crypto:'암호화폐', country:'국가ETF', ai_data:'AI', fintech:'핀테크'
+    };
+
+    let sectorHtml = '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px">';
+    for (const [sector, stat] of Object.entries(sector_summary)) {
+      const total = stat.total;
+      if (!total) continue;
+      // 섹터 색상: 매수가 많으면 green, 매도가 많으면 red
+      const buyRatio  = stat.buy  / total;
+      const sellRatio = stat.sell / total;
+      let bg = 'var(--bg3)';
+      let tc = 'var(--text3)';
+      if (buyRatio >= 0.3)  { bg = 'rgba(63,185,80,.12)';  tc = 'var(--green)'; }
+      if (sellRatio >= 0.3) { bg = 'rgba(248,81,73,.12)';  tc = 'var(--red)'; }
+
+      sectorHtml += `
+        <div style="background:${bg};border:1px solid var(--border);border-radius:6px;
+                    padding:6px 10px;cursor:pointer;min-width:70px;text-align:center"
+             onclick="filterBollBySecotor('${sector}')">
+          <div style="font-size:11px;color:${tc};font-weight:700">
+            ${sectorKr[sector]||sector}
+          </div>
+          <div style="font-size:10px;color:var(--text3);margin-top:2px">
+            🟢${stat.buy} 🔴${stat.sell} 👀${stat.watch}
+          </div>
+        </div>`;
+    }
+    sectorHtml += '</div>';
+
+    // 신호 카드
+    const signalConfig = {
+      buy:   { label:'🟢 매수 신호', bg:'rgba(63,185,80,.08)',  border:'rgba(63,185,80,.25)'  },
+      sell:  { label:'🔴 인버스 신호', bg:'rgba(248,81,73,.08)', border:'rgba(248,81,73,.25)' },
+      watch: { label:'👀 관찰 신호', bg:'rgba(210,153,34,.08)', border:'rgba(210,153,34,.25)' },
+    };
+
+    let cardsHtml = '';
+    for (const [type, cfg] of Object.entries(signalConfig)) {
+      const rows = signals[type] || [];
+      if (!rows.length) continue;
+
+      cardsHtml += `
+        <div style="background:${cfg.bg};border:1px solid ${cfg.border};
+                    border-radius:8px;padding:14px 16px;margin-bottom:10px">
+          <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:10px">
+            ${cfg.label} <span style="font-size:11px;font-weight:400;color:var(--text3)">${rows.length}개</span>
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px">`;
+
+      for (const r of rows) {
+        const pctB    = (r.pct_b * 100).toFixed(0);
+        const strength = '★'.repeat(r.signal_strength || 1);
+        const gradeColor = r.grade === 'A' ? 'var(--blue)' :
+                           r.grade === 'B' ? 'var(--yellow)' : 'var(--text3)';
+
+        // 옵션 확인 (PCR 낮으면 call 쏠림)
+        let optSign = '';
+        if (r.pcr_oi !== null && r.pcr_oi !== undefined) {
+          if (type === 'buy'  && r.pcr_oi < 0.7) optSign = ' ✅옵션확인';
+          if (type === 'sell' && r.pcr_oi > 1.5) optSign = ' ✅옵션확인';
+        }
+
+        cardsHtml += `
+          <div style="background:var(--bg2);border:1px solid var(--border);
+                      border-radius:6px;padding:8px 12px;min-width:130px">
+            <div style="display:flex;align-items:center;justify-content:space-between">
+              <span style="font-weight:700;color:var(--text);font-family:var(--mono)">
+                ${r.symbol}
+              </span>
+              <span style="font-size:10px;color:${gradeColor};font-weight:700">
+                ${r.grade}등급
+              </span>
+            </div>
+            <div style="font-size:11px;color:var(--text3);margin-top:4px">
+              %B: <span style="color:var(--text2)">${pctB}%</span>
+              · $${r.close}
+            </div>
+            <div style="font-size:11px;margin-top:2px">
+              <span style="color:var(--yellow)">${strength}</span>
+              <span style="color:var(--green);font-size:10px">${optSign}</span>
+            </div>
+          </div>`;
+      }
+      cardsHtml += '</div></div>';
+    }
+
+    el.innerHTML = sectorHtml + cardsHtml;
+
+  } catch(err) {
+    el.innerHTML = '<div style="color:var(--red);font-size:12px;padding:8px">⚠️ ' + err.message + '</div>';
+  }
+}
+
+function filterBollBySecotor(sector) {
+  // 섹터 클릭 시 하단 스크리너 필터 연동 (향후 구현)
+  console.log('섹터 필터:', sector);
+}
+
+async function loadScreener() {
+  const type = document.getElementById('screener-type')?.value || 'all';
+  const resultEl = document.getElementById('screener-result');
+  const timeEl   = document.getElementById('screener-time');
+
+  if (resultEl) resultEl.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text3)">로딩 중...</div>';
+
+  try {
+    const res  = await fetch(`${API_BASE}/api/screener?type=${type}`);
+    const data = await res.json();
+
+    if (data.error) throw new Error(data.error);
+
+    const today = new Date().toISOString().split('T')[0];
+    const isLatest = data.date === today;
+    const dateLabel = isLatest ? data.date + ' (오늘)' : data.date + ' (최근 거래일 기준)';
+    if (timeEl) timeEl.textContent = '기준일: ' + dateLabel;
+
+    // 데이터 없을 때
+    if (data.total === 0) {
+      if (resultEl) resultEl.innerHTML = `
+        <div style="text-align:center;padding:40px;color:var(--text3)">
+          <div style="font-size:24px;margin-bottom:8px">📭</div>
+          <div>수집된 데이터가 없습니다</div>
+          <div style="font-size:12px;margin-top:4px">장 마감 후 자동 수집됩니다 (21:00 UTC)</div>
+        </div>`;
+      return;
+    }
+
+    // 섹터별 렌더
+    let html = '';
+    const sectorNames = {
+      broad_market: '🌐 시장 전체', technology: '💻 기술',
+      energy: '⛽ 에너지', financial: '🏦 금융',
+      healthcare: '💊 헬스케어', industrial: '🏗 산업재',
+      utilities: '⚡ 유틸리티', staples: '🛒 필수소비재',
+      discretionary: '🛍 임의소비재'
+    };
+
+    for (const [sector, items] of Object.entries(data.sectors)) {
+      const sectorLabel = sectorNames[sector] || sector;
+      html += `<div style="margin-bottom:24px">`;
+      html += `<div style="font-size:13px;font-weight:700;color:var(--text2);
+               margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--border)">
+               ${sectorLabel}</div>`;
+
+      // ETF 먼저
+      const allRows = [...(items.etf||[]), ...(items.stocks||[])];
+      if (!allRows.length) continue;
+
+      html += `<div style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse;font-size:12px">
+          <thead>
+            <tr style="color:var(--text3);border-bottom:1px solid var(--border)">
+              <th style="text-align:left;padding:4px 8px;width:70px">종목</th>
+              <th style="text-align:left;padding:4px 8px;width:50px">구분</th>
+              <th style="text-align:right;padding:4px 8px">만기</th>
+              <th style="text-align:right;padding:4px 8px">DTE</th>
+              <th style="text-align:right;padding:4px 8px">Call OI</th>
+              <th style="text-align:right;padding:4px 8px">Put OI</th>
+              <th style="text-align:right;padding:4px 8px">PCR</th>
+              <th style="text-align:right;padding:4px 8px">Z-Score</th>
+              <th style="text-align:center;padding:4px 8px;min-width:120px">IV Skew</th>
+              <th style="text-align:right;padding:4px 8px">신호</th>
+            </tr>
+          </thead>
+          <tbody>`;
+
+      for (const r of allRows) {
+        const zscore  = r.oi_zscore || 0;
+        const skew    = r.iv_skew || 0;
+        const isEtf   = r.type === 'etf';
+
+        // 신호 판단
+        let signal = '🟡';
+        let rowBg  = 'transparent';
+        if (zscore > 2  && skew > 0) { signal = '🟢 Call 급증'; rowBg = 'rgba(63,185,80,0.05)'; }
+        else if (zscore > 2)          { signal = '🟢 OI 급증';   rowBg = 'rgba(63,185,80,0.05)'; }
+        else if (zscore < -2)         { signal = '🔴 Put 급증';  rowBg = 'rgba(248,81,73,0.05)'; }
+        else if (skew > 0.05)         { signal = '📈 Call Skew'; }
+        else if (skew < -0.05)        { signal = '📉 Put Skew';  }
+
+        const zColor = zscore > 2 ? 'var(--green)' : zscore < -2 ? 'var(--red)' : 'var(--text2)';
+        const skewColor = skew > 0.02 ? 'var(--green)' : skew < -0.02 ? 'var(--red)' : 'var(--text2)';
+
+        html += `<tr style="border-bottom:1px solid var(--border);background:${rowBg}">
+          <td style="padding:5px 8px;font-weight:${isEtf?'700':'400'};color:var(--text1)">
+            ${r.symbol}
+          </td>
+          <td style="padding:5px 8px;color:var(--text3)">
+            ${isEtf ? 'ETF' : '주식'}
+          </td>
+          <td style="padding:5px 8px;text-align:right;color:var(--text2)">${r.expiry_date||'-'}</td>
+          <td style="padding:5px 8px;text-align:right;color:var(--text3)">${r.dte||'-'}일</td>
+          <td style="padding:5px 8px;text-align:right;color:var(--text2)">${fmt(r.call_oi)}</td>
+          <td style="padding:5px 8px;text-align:right;color:var(--text2)">${fmt(r.put_oi)}</td>
+          <td style="padding:5px 8px;text-align:right;color:var(--text2)">${r.pcr_oi?.toFixed(2)||'-'}</td>
+          <td style="padding:5px 8px;text-align:right;color:${zColor};font-weight:600">
+            ${zscore > 0 ? '+' : ''}${zscore.toFixed(1)}
+          </td>
+          <td style="padding:4px 8px;vertical-align:middle">
+            ${renderSkewBar(skew)}
+          </td>
+          <td style="padding:5px 8px;text-align:right">${signal}</td>
+        </tr>`;
+      }
+
+      html += `</tbody></table></div></div>`;
+    }
+
+    if (resultEl) resultEl.innerHTML = html;
+    screenerLoaded = true;
+
+  } catch (err) {
+    if (resultEl) resultEl.innerHTML = `
+      <div style="text-align:center;padding:40px;color:var(--red)">
+        <div style="font-size:20px;margin-bottom:8px">⚠️</div>
+        <div>${err.message}</div>
+      </div>`;
+  }
+}
+
+function renderSkewBar(skew) {
+  // skew 범위: 보통 -0.5 ~ +0.5 (IV 단위)
+  // 바 최대 너비 기준: ±0.3을 100%로 정규화
+  const MAX   = 0.30;
+  const pct   = Math.min(Math.abs(skew) / MAX * 100, 100);
+  const label = (skew > 0 ? '+' : '') + (skew * 100).toFixed(1) + '%';
+
+  if (skew > 0.01) {
+    // Call Skew — 중앙에서 오른쪽으로 초록 바
+    return `
+      <div style="display:flex;align-items:center;gap:4px;font-size:11px">
+        <div style="width:50%;display:flex;justify-content:flex-end">
+          <div style="width:2px;height:12px;background:var(--border)"></div>
+        </div>
+        <div style="width:50%;display:flex;align-items:center;gap:3px">
+          <div style="width:${pct/2}%;min-width:2px;height:8px;
+               background:var(--green);border-radius:0 2px 2px 0;opacity:.85"></div>
+          <span style="color:var(--green);white-space:nowrap;font-size:10px">${label}</span>
+        </div>
+      </div>`;
+  } else if (skew < -0.01) {
+    // Put Skew — 중앙에서 왼쪽으로 빨간 바
+    return `
+      <div style="display:flex;align-items:center;gap:4px;font-size:11px">
+        <div style="width:50%;display:flex;justify-content:flex-end;align-items:center;gap:3px">
+          <span style="color:var(--red);white-space:nowrap;font-size:10px">${label}</span>
+          <div style="width:${pct/2}%;min-width:2px;height:8px;
+               background:var(--red);border-radius:2px 0 0 2px;opacity:.85"></div>
+        </div>
+        <div style="width:50%">
+          <div style="width:2px;height:12px;background:var(--border)"></div>
+        </div>
+      </div>`;
+  } else {
+    // 중립
+    return `
+      <div style="display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--text3)">
+        <div style="width:2px;height:12px;background:var(--border);margin-right:4px"></div>
+        <span>0</span>
+      </div>`;
+  }
+}
+
+function fmt(n) {
+  if (!n) return '-';
+  if (n >= 1000000) return (n/1000000).toFixed(1) + 'M';
+  if (n >= 1000)    return (n/1000).toFixed(1) + 'K';
+  return n.toString();
+}
+
+async function load0DTE() {
+  const sym = document.getElementById('sym-select-0dte').value;
+  // 심볼 변경 시 vcHistory 초기화 (다른 심볼 데이터 섞임 방지)
+  if (current0DTESym && current0DTESym !== sym) {
+    vcHistory = [];
+    priceHistory = [];
+  }
+  current0DTESym = sym;
+  setStatus('updating');
+  try {
+    // 병렬: 서버 0DTE (+ 첫 로드 시 시계열 로드)
+    // 현재가/VIX는 loadQuote()에서 30초마다 별도 갱신
+    const fetchList = [
+      fetch(`${PROXY}/api/gex0dte?symbol=${sym}`).then(r => r.json()),
+    ];
+    // vcHistory가 비어있으면 KV 시계열 로드
+    const isFirstLoad = vcHistory.length === 0;
+    if (isFirstLoad) {
+      fetchList.push(fetch(`${PROXY}/api/vc_history?symbol=${sym}`).then(r => r.json()));
+    }
+    const results = await Promise.all(fetchList);
+    const d0 = results[0];
+
+    // KV 시계열 로드 처리
+    if (isFirstLoad && results[1] && !results[1].error) {
+      const kvHistory = results[1].history || [];
+      if (kvHistory.length > 0) {
+        vcHistory = kvHistory.map(p => ({
+          iso:      p.iso,      // UTC ISO (신규 포맷)
+          time:     p.iso ? toKST(p.iso) : p.time, // 표시용 (구버전 호환)
+          vanna:    p.vanna,
+          charm:    p.charm,
+          vix:      p.vix,
+          vv:       p.vv   ?? null,
+          vold:     p.vold ?? null,
+          spot:     p.spot,
+        }));
+        console.log(`[load0DTE] KV 시계열 로드: ${vcHistory.length}포인트`);
+      }
+    }
+
+    if (d0.error) throw new Error(d0.error);
+
+    // 현재가/VIX는 loadQuote()에서 관리 — 여기서는 캐시값 사용
+    const priceJson = window._lastPriceJson || {};
+    const vixJson   = window._lastVixJson   || {};
+
+    // VV 계산: priceHistory에서 5분 전 VIX와 현재 VIX 비교
+    let vvNow = null;
+    const vixHistoryPts = vcHistory.filter(h => h.vix != null);
+    if (vixHistoryPts.length >= 1 && vixVal != null) {
+      const prev5 = vixHistoryPts.length >= 1 ? vixHistoryPts[vixHistoryPts.length - 1] : null;
+      if (prev5 && prev5.vix != null) {
+        vvNow = parseFloat(((vixVal - prev5.vix) / 5).toFixed(4));
+      }
+    }
+
+    const newSpot = priceJson.price || d0.spotPrice;
+    const marketState = priceJson.marketState || 'REGULAR';
+    const preMarketPct = priceJson.preMarketChangePercent;
+    const prevClose    = priceJson.prevClose;
+
+    // KST 시간 문자열 (화면 표시용)
+    const now = new Date();
+    const nowIsoStr = now.toISOString(); // UTC ISO — 저장 기준
+    const timeStr = toKST(nowIsoStr);   // KST 표시용
+
+    priceHistory.push({ time: timeStr, price: newSpot, marketState, vix: vixVal, vvix: vvixVal, ts: now.getTime() });
+    if (priceHistory.length > 60) priceHistory.shift();
+
+    vcHistory.push({
+      iso:   nowIsoStr,  // UTC ISO (차트 매핑 기준)
+      time:  timeStr,    // KST 표시용
+      vanna: d0.vanna,
+      charm: d0.charm,
+      vix:   vixVal,
+      vv:    vvNow,
+      vold:  window._lastVold ?? null,  // WS market Cron에서 수신된 최신 VOLD
+      spot:  newSpot,
+    });
+    if (vcHistory.length > 200) vcHistory.shift();
+
+    // currentD 동기화 (판단 패널 함수들이 사용)
+    const strikes = d0.strikes || [];
+    currentD = {
+      strikes,
+      spotPrice: d0.spotPrice,
+      flipZone:  d0.flipZone,
+      putWall:   d0.putWall,
+      callWall:  d0.callWall,
+      localGEX:  (d0.localGEX || 0) * 1e6,
+      totalGEX:  (d0.totalGEX || 0) * 1e6,
+      pcr:       d0.pcr,
+      exp:       d0.exp,
+      isPreview: d0.isPreview || false,
+      sym,
+      upStrikes: d0.upStrikes || [],
+      dnStrikes: d0.dnStrikes || [],
+    };
+    currentStrikes = strikes;
+    prevSpot = newSpot;
+
+    // 0DTE 영역 렌더
+    render0DTE(d0, newSpot, marketState, preMarketPct, prevClose, timeStr);
+
+    // 타임스탬프 표시
+    const computedAt = d0.computedAt ? toKST(d0.computedAt) : '—';
+    const srcLabel   = d0.source === 'cron_computed' ? '🟢 Cron' : '🟡 On-demand';
+    const previewBadge = d0.isPreview ? ` · 📅 ${d0.exp} 미리보기` : '';
+    document.getElementById('data-time-0dte').textContent = `${srcLabel} · 계산: ${computedAt} · 조회: ${timeStr}${previewBadge}`;
+    setStatus('live');
+  } catch(e) {
+    console.error('[0DTE]', e);
+    setStatus('error');
+    document.getElementById('main-area-0dte').innerHTML = `<div class="card"><div class="empty-state"><div class="empty-title">로드 실패</div><div class="empty-sub">${e.message}</div></div></div>`;
+  }
+}
+
+function toggle0DTEAuto() {
+  if (auto0DTEInterval) {
+    clearInterval(auto0DTEInterval);
+    auto0DTEInterval = null;
+    document.getElementById('auto-btn-0dte').className = 'auto-btn';
+    document.getElementById('auto-label-0dte').textContent = '자동갱신 OFF';
+  } else {
+    document.getElementById('auto-btn-0dte').className = 'auto-btn on';
+    document.getElementById('auto-label-0dte').textContent = '자동갱신 ON';
+    load0DTE();
+    auto0DTEInterval = setInterval(load0DTE, 60000);
+  }
+}
+
+// 0DTE 전용 render
+function render0DTE(d0, newSpot, marketState, preMarketPct, prevClose, timeStr) {
+  const vc = { totalVanna: d0.vanna, totalCharm: d0.charm };
+  const strikes = d0.strikes || [];
+  const { spotPrice, flipZone, putWall, callWall, exp, pcr } = d0;
+  const localGEX  = (d0.localGEX || 0) * 1e6;
+  const totalGEX  = (d0.totalGEX || 0) * 1e6;
+  const upStrikes = d0.upStrikes || [];
+  const dnStrikes = d0.dnStrikes || [];
+  const sym = d0.symbol || current0DTESym;
+
+  const regime = totalGEX >= 0 ? 'positive' : 'negative';
+  const alarms = [];
+  const flipDist = flipZone ? Math.abs(spotPrice - flipZone) / spotPrice * 100 : null;
+  const putDist  = putWall  ? (spotPrice - putWall)  / spotPrice * 100 : null;
+  if (!flipZone)            alarms.push({ l:'red',    m:`GEX 전 구간 ${regime==='negative'?'음수':'양수'} — Flip Zone 없음` });
+  else if (flipDist < 0.5)  alarms.push({ l:'red',    m:`Flip Zone ($${flipZone}) 극근접 ${flipDist.toFixed(2)}% — 방향 전환 임박` });
+  else if (flipDist < 1.5)  alarms.push({ l:'yellow', m:`Flip Zone ($${flipZone}) 근접 ${flipDist.toFixed(2)}%` });
+  if (putDist !== null && putDist < 1) alarms.push({ l:'red', m:`Put Wall ($${putWall}) 직하방 — 이탈 시 낙폭 가속` });
+  alarms.push(localGEX < 0
+    ? { l:'red',   m:`로컬 GEX ${(localGEX/1e6).toFixed(1)}M — 딜러 추세 증폭` }
+    : { l:'green', m:`로컬 GEX +${(localGEX/1e6).toFixed(1)}M — 딜러 변동성 억제` });
+  if (pcr > 1.5) alarms.push({ l:'red', m:`PCR ${pcr.toFixed(2)} — 풋 편중 심화` });
+  else if (pcr < 0.7) alarms.push({ l:'yellow', m:`PCR ${pcr.toFixed(2)} — 콜 편중` });
+
+  const maxUp = Math.max(...upStrikes.map(s => s.callHedge), 1);
+  const maxDn = Math.max(...dnStrikes.map(s => s.putHedge),  1);
+  const rankCls = i => ['r1','r2','r3','r4'][i] || 'r4';
+  const upRows = upStrikes.map((s,i) => {
+    const dist = ((s.strike - spotPrice) / spotPrice * 100).toFixed(2);
+    const pct  = Math.round(s.callHedge / maxUp * 100);
+    return `<div class="hedge-row"><span class="hedge-rank ${rankCls(i)}">${i+1}</span><span class="hedge-strike">$${s.strike}</span><span class="hedge-dist">+${dist}%</span><div class="hedge-bar-wrap"><div class="hedge-bar up" style="width:${pct}%"></div></div><span class="hedge-pressure">${(s.callHedge/1e6).toFixed(1)}M</span></div>`;
+  }).join('');
+  const dnRows = dnStrikes.map((s,i) => {
+    const dist = ((spotPrice - s.strike) / spotPrice * 100).toFixed(2);
+    const pct  = Math.round(s.putHedge / maxDn * 100);
+    return `<div class="hedge-row"><span class="hedge-rank ${rankCls(i)}">${i+1}</span><span class="hedge-strike">$${s.strike}</span><span class="hedge-dist">-${dist}%</span><div class="hedge-bar-wrap"><div class="hedge-bar dn" style="width:${pct}%"></div></div><span class="hedge-pressure">${(s.putHedge/1e6).toFixed(1)}M</span></div>`;
+  }).join('');
+
+  const vixDisplay  = vixVal  ? vixVal.toFixed(2)  : '—';
+  const vvixDisplay = vvixVal ? vvixVal.toFixed(2) : '—';
+  const fixedItems  = buildFixedJudgment({ strikes, spotPrice, flipZone, putWall, callWall, localGEX, totalGEX, upStrikes, dnStrikes }, vc);
+  const chartData   = strikes.filter(s => Math.abs(s.strike - spotPrice) / spotPrice < 0.08);
+  const tableData   = strikes.filter(s => Math.abs(s.strike - spotPrice) / spotPrice < 0.10);
+
+  const spotDisplay = newSpot ? newSpot.toFixed(1) : spotPrice.toFixed(1);
+  const stateLabel  = { PRE:'프리마켓', REGULAR:'정규장', POST:'애프터', CLOSED:'마감' }[marketState] || marketState;
+  const pctBase = (marketState === 'PRE' && prevClose) ? prevClose : spotPrice;
+  const pct     = newSpot ? ((newSpot - pctBase) / pctBase * 100) : 0;
+  const pctStr  = `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%`;
+
+  document.getElementById('main-area-0dte').innerHTML = `
+  <div class="card">
+    <div class="card-title">${sym} · 0DTE ${exp} · ${stateLabel} · 서버계산(Cron)</div>
+    <div class="regime-bar ${regime}">${regime==='positive'?'✚ Positive GEX — 딜러 변동성 억제 (피닝)':'▼ Negative GEX — 딜러 추세 증폭'}</div>
+    <div id="alarm-list-0dte"></div>
+    <div class="metrics">
+      <div class="metric blue" id="metric-spot-0dte"><div class="val">[${stateLabel.slice(0,2)}] $${spotDisplay}</div><div class="lbl">현재가 ${pctStr}</div></div>
+      <div class="metric ${flipZone?'orange':''}"><div class="val">${flipZone?'$'+flipZone:'없음'}</div><div class="lbl">Flip Zone</div></div>
+      <div class="metric ${pcr>1.5?'red':pcr<0.7?'yellow':''}"><div class="val">${pcr.toFixed(2)}</div><div class="lbl">Put/Call</div></div>
+      <div class="metric red"><div class="val">${putWall?'$'+putWall:'—'}</div><div class="lbl">Put Wall</div></div>
+      <div class="metric green"><div class="val">${callWall?'$'+callWall:'—'}</div><div class="lbl">Call Wall</div></div>
+      <div class="metric ${localGEX<0?'red':'green'}"><div class="val">${(localGEX/1e6).toFixed(1)}M</div><div class="lbl">Local GEX</div></div>
+      <div class="metric ${vixVal&&vixVal>30?'danger':vixVal&&vixVal>20?'warn':'yellow'}" id="metric-vix"><div class="val">${vixDisplay}${window._lastVixJson?.VIX?.pctChange!=null?`<span style="font-size:12px;opacity:.75;margin-left:3px">(${window._lastVixJson.VIX.pctChange>0?'+':''}${window._lastVixJson.VIX.pctChange.toFixed(1)}%)</span>`:''}</div><div class="lbl">VIX &nbsp;<span id="metric-vv" style="color:var(--text3);font-size:10px;font-family:var(--mono)">VV —</span></div></div>
+      <div class="metric" id="metric-obv"><div class="val" id="metric-obv-val" style="font-size:16px">—</div><div class="lbl">VOLD &nbsp;<span id="metric-obv-slope" style="font-size:10px;color:var(--text3);font-family:var(--mono)">—</span></div></div>
+      <div class="metric" id="metric-vanna" style="border-color:#bc8cff55"><div class="val" style="color:#bc8cff">${d0.vanna.toFixed(1)}M</div><div class="lbl" style="color:#bc8cff">● Vanna Exp</div></div>
+      <div class="metric" id="metric-charm" style="border-color:#58a6ff55"><div class="val" style="color:#58a6ff">${d0.charm.toFixed(1)}M</div><div class="lbl" style="color:#58a6ff">● Charm · VC ${Math.abs(d0.vanna)>0?(Math.abs(d0.charm)/Math.abs(d0.vanna)).toFixed(2):'—'}</div></div>
+    </div>
+
+    <div class="judgment-panel" style="margin-top:20px">
+      <div class="judgment-fixed">
+        <div class="judgment-fixed-title">시장 구조 분석 — 0DTE 핵심 구조</div>
+        <div id="judgment-fixed-content-0dte">${fixedItems.map(item=>`<div class="judgment-item ${item.cls}"><span class="ji-icon">${item.icon}</span><span class="ji-text">${item.text}</span></div>`).join('')}</div>
+      </div>
+      <div class="judgment-live">
+        <div class="judgment-live-header">
+          <div class="judgment-live-title"><div class="live-dot"></div>실시간 상황 판단</div>
+          <div class="judgment-live-nav">
+            <div class="jl-nav-btn" onclick="jlScroll0('-1')" title="위로">▲</div>
+            <div class="jl-nav-btn" onclick="jlScroll0('1')"  title="아래로">▼</div>
+          </div>
+        </div>
+        <div class="judgment-live-scroll" id="judgment-live-scroll-0dte">
+          <div id="judgment-live-content-0dte"><div class="live-event le-info"><span class="le-time">—</span><span class="le-msg">자동갱신 시 실시간 판단이 누적됩니다</span></div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="hedge-section">
+      <div class="hedge-title">딜러 헷지 부담 집중 스트라이크 (γ × OI 기준)</div>
+      <div class="hedge-grid">
+        <div><div class="hedge-col-label" style="color:var(--green)">▲ 상승 — 콜 헷지 Top4</div>${upRows||'<div style="color:var(--text3);font-size:13px;padding:8px">데이터 없음</div>'}</div>
+        <div><div class="hedge-col-label" style="color:var(--red)">▼ 하락 — 풋 헷지 Top4</div>${dnRows||'<div style="color:var(--text3);font-size:13px;padding:8px">데이터 없음</div>'}</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="vc-panel-wrap" style="flex-direction:column">
+    <div id="greek-metrics-row" style="display:flex;gap:10px;flex-wrap:wrap;padding:14px 20px 0;border-bottom:1px solid var(--border)">
+      <div class="greek-metric-card" id="gmc-vanna"><div class="gmc-header"><span class="gmc-dot" id="gmc-vanna-dot"></span><span class="gmc-name">Vanna</span><span class="gmc-signal" id="gmc-vanna-signal">—</span></div><div class="gmc-value" id="gmc-vanna-val">—</div><div class="gmc-desc" id="gmc-vanna-desc">갱신 후 표시</div></div>
+      <div class="greek-metric-card" id="gmc-charm"><div class="gmc-header"><span class="gmc-dot" id="gmc-charm-dot"></span><span class="gmc-name">Charm</span><span class="gmc-signal" id="gmc-charm-signal">—</span></div><div class="gmc-value" id="gmc-charm-val">—</div><div class="gmc-desc" id="gmc-charm-desc">갱신 후 표시</div></div>
+      <div class="greek-metric-card" id="gmc-gex"><div class="gmc-header"><span class="gmc-dot" id="gmc-gex-dot"></span><span class="gmc-name">Local GEX</span><span class="gmc-signal" id="gmc-gex-signal">—</span></div><div class="gmc-value" id="gmc-gex-val">—</div><div class="gmc-desc" id="gmc-gex-desc">갱신 후 표시</div></div>
+      <div class="greek-metric-card" style="flex:1;min-width:160px" id="gmc-dominant"><div class="gmc-header"><span class="gmc-name" style="color:var(--text2)">◈ 지배 Greek</span></div><div class="gmc-value" id="gmc-dominant-val" style="font-size:13px">—</div><div class="gmc-desc" id="gmc-flip-desc">—</div></div>
+    </div>
+    <div class="vc-chart-area" style="width:100%;border-right:none">
+      <div class="vc-chart-header">
+        <div class="vc-chart-title">◈ Greek 실시간 흐름 (서버 계산 · Cron 5분)</div>
+        <div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">
+          <span style="font-size:12px;color:#bc8cff;font-weight:600">● Vanna</span>
+          <span style="font-size:12px;color:#58a6ff;font-weight:600">● Charm</span>
+          <span style="font-size:12px;color:#d29922;font-weight:600">● VV</span>
+          <span style="font-size:12px;color:#3fb950;font-weight:600">● VOLD</span>
+        </div>
+      </div>
+      <!-- 시간범위 버튼 + 슬라이더 -->
+      <div class="vc-zoom-row" style="gap:8px;flex-wrap:wrap">
+        <div style="display:flex;gap:4px">
+          <button class="vc-range-btn active" id="vcrange-2h" onclick="setVCRange('2h')">2H</button>
+          <button class="vc-range-btn" id="vcrange-4h" onclick="setVCRange('4h')">4H</button>
+          <button class="vc-range-btn" id="vcrange-8h" onclick="setVCRange('8h')">8H</button>
+          <button class="vc-range-btn" id="vcrange-1d" onclick="setVCRange('1d')">1D</button>
+          <button class="vc-range-btn" id="vcrange-all" onclick="setVCRange('all')">ALL</button>
+        </div>
+        <input type="range" class="vc-zoom-slider" id="vc-zoom-slider" min="1" max="16" step="1" value="8" oninput="onVCSlider(this.value)">
+        <span class="vc-zoom-val" id="vc-zoom-val">2H</span>
+        <span style="font-size:11px;color:var(--text3)">← 스크롤 →</span>
+      </div>
+      <!-- 3-페인 동기화 차트 -->
+      <div id="vc-multipane-wrap" style="overflow-x:auto;overflow-y:hidden;width:100%;cursor:grab">
+        <!-- 내부 컨테이너: 실제 차트 너비 -->
+        <div id="vc-multipane-inner" style="display:inline-block;min-width:100%">
+          <!-- 페인1: Vanna + Charm -->
+          <div style="position:relative">
+            <div style="font-size:10px;color:var(--text3);padding:4px 8px;display:flex;gap:10px">
+              <span style="color:#bc8cff">● Vanna</span><span style="color:#58a6ff">● Charm</span>
+            </div>
+            <div id="vc-pane-vc-wrap" style="position:relative;height:220px">
+              <canvas id="vc-pane-vc"></canvas>
+            </div>
+          </div>
+          <div style="height:1px;background:var(--border);margin:0"></div>
+          <!-- 페인2: VV -->
+          <div style="position:relative">
+            <div style="font-size:10px;color:var(--text3);padding:4px 8px">
+              <span style="color:#d29922">● VIX Velocity 누적 (Tick 스타일)</span>
+            </div>
+            <div id="vc-pane-vv-wrap" style="position:relative;height:220px">
+              <canvas id="vc-pane-vv"></canvas>
+            </div>
+          </div>
+          <div style="height:1px;background:var(--border);margin:0"></div>
+          <!-- 페인3: VOLD -->
+          <div style="position:relative">
+            <div style="font-size:10px;color:var(--text3);padding:4px 8px">
+              <span style="color:#3fb950">● VOLD (UVOL - DVOL, 장중)</span>
+            </div>
+            <div id="vc-pane-obv-wrap" style="position:relative;height:220px">
+              <canvas id="vc-pane-obv"></canvas>
+            </div>
+          </div>
+        </div>
+      </div>
+      <!-- 신호등 패널 -->
+      <div id="vc-signal-bar" style="padding:10px 16px;border-top:1px solid var(--border);font-size:13px;font-weight:600;letter-spacing:.02em;min-height:42px;display:flex;align-items:center;gap:12px;background:rgba(0,0,0,.15)">
+        <div id="vc-signal-indicator" style="width:14px;height:14px;border-radius:3px;flex-shrink:0;background:var(--text3)"></div>
+        <span id="vc-signal-text" style="color:var(--text2);font-size:13px">데이터 누적 중...</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">OI 분포 + GEX (0DTE)</div>
+    <div class="chart-controls">
+      <span class="zoom-label">확대</span>
+      <input type="range" class="zoom-slider" id="zoom-slider" min="1" max="6" step="0.5" value="1" oninput="updateZoom(this.value)">
+      <span class="zoom-val" id="zoom-val">1×</span>
+      <span class="scroll-hint">← 가로 스크롤 →</span>
+    </div>
+    <div class="chart-scroll-wrap" id="chart-scroll-wrap">
+      <div class="chart-inner" id="chart-inner"><canvas id="mainchart"></canvas></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">스트라이크별 상세 — 현재가 ±10%</div>
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>Strike</th><th>Call OI</th><th>Δ Call</th><th>Put OI</th><th>Δ Put</th><th>GEX(M)</th><th>Call Vol</th><th>Put Vol</th><th>IV</th></tr></thead>
+      <tbody id="tbl-body-0dte"></tbody>
+    </table></div>
+  </div>`;
+
+  // 알람 렌더
+  const al = document.getElementById('alarm-list-0dte');
+  (alarms.length ? alarms : [{ l:'green', m:'특이 리스크 없음' }]).forEach(a => {
+    const div = document.createElement('div'); div.className = `alarm ${a.l}`; div.textContent = a.m; al.appendChild(div);
+  });
+
+  // 차트 & 테이블
+  requestAnimationFrame(() => {
+    buildChart(chartData, newSpot || spotPrice, flipZone, putWall, callWall);
+  });
+  const tbody = document.getElementById('tbl-body-0dte');
+  if (tbody) tableData.forEach(s => {
+    const isCur = Math.abs(s.strike - (newSpot||spotPrice)) < 0.5;
+    const isFlip = s.strike === flipZone, isPW = s.strike === putWall, isCW = s.strike === callWall;
+    const tr = document.createElement('tr');
+    if (isCur) tr.className = 'cur'; else if (isFlip) tr.className = 'flip';
+    let tags = '';
+    if (isCur)  tags += `<span class="tag tag-cur">현재가</span>`;
+    if (isFlip) tags += `<span class="tag tag-flip">Flip</span>`;
+    if (isPW)   tags += `<span class="tag tag-pw">Put Wall</span>`;
+    if (isCW)   tags += `<span class="tag tag-cw">Call Wall</span>`;
+    const gc = s.gex >= 0 ? '#3fb950' : '#f85149';
+
+    // OI 증감 포매터
+    const fmtDiff = (d) => {
+      if (d == null || d === 0) return '<span style="color:var(--text3)">—</span>';
+      const sign = d > 0 ? '+' : '';
+      const color = d > 0 ? 'var(--green)' : 'var(--red)';
+      const abs = Math.abs(d);
+      const str = abs >= 1000 ? (abs/1000).toFixed(1)+'K' : abs.toString();
+      return `<span style="color:${color};font-size:11px">${sign}${d > 0 ? str : '-'+str}</span>`;
+    };
+
+    tr.innerHTML = `<td>$${s.strike}${tags}</td><td>${s.callOI.toLocaleString()}</td><td>${fmtDiff(s.callOIDiff)}</td><td>${s.putOI.toLocaleString()}</td><td>${fmtDiff(s.putOIDiff)}</td><td style="color:${gc};font-weight:600">${s.gex>=0?'+':''}${(s.gex/1e6).toFixed(2)}</td><td>${(s.callVol||0).toLocaleString()}</td><td>${(s.putVol||0).toLocaleString()}</td><td>${s.iv>0?(s.iv*100).toFixed(1)+'%':'—'}</td>`;
+    tbody.appendChild(tr);
+  });
+
+  // 실시간 판단 이벤트 — 프리마켓~장 마감(EST 16:00)까지만 업데이트
+  const _nowEST = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
+  const _estH = _nowEST.getHours() + _nowEST.getMinutes() / 60;
+  const _isMarketHours = _estH >= 4 && _estH < 16; // 프리마켓 04:00 ~ 장 마감 16:00
+  if (_isMarketHours) {
+    const ctx0 = { marketState, priceLabel: `[${stateLabel}] $${spotDisplay}`, preMarketPct, prevClose, vix: vixVal };
+    const liveEvts = buildLiveJudgment(newSpot || spotPrice, vc, currentD, ctx0, timeStr);
+    liveEvts.forEach(ev => { liveEvents.unshift({ time: timeStr, cls: ev.cls, msg: ev.msg }); });
+    if (liveEvents.length > 15) liveEvents = liveEvents.slice(0, 15);
+  }
+  const liveEl = document.getElementById('judgment-live-content-0dte');
+  if (liveEl) {
+    if (!_isMarketHours && liveEvents.length === 0) {
+      liveEl.innerHTML = `<div class="live-event le-info"><span class="le-time">—</span><span class="le-msg">장 마감 — 다음 거래일 프리마켓부터 업데이트됩니다</span></div>`;
+    } else {
+      liveEl.innerHTML = liveEvents.map(e => `<div class="live-event ${e.cls}"><span class="le-time">${e.time}</span><span class="le-msg">${e.msg}</span></div>`).join('') || `<div class="live-event le-info"><span class="le-time">—</span><span class="le-msg">감지 중...</span></div>`;
+    }
+  }
+
+  // Greek 힘의 균형
+  const force = calcForceBalance(vc, currentD, vixVal, vvixVal);
+  renderForceSidebar(force);
+  requestAnimationFrame(() => renderVCChart());
+}
+
+function jlScroll0(dir) {
+  const el = document.getElementById('judgment-live-scroll-0dte');
+  if (el) el.scrollBy({ top: parseInt(dir) * 72, behavior: 'smooth' });
+}
+
+
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 시간 유틸
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+// UTC ISO → KST "HH:MM" (저장 기준: UTC ISO, 표시 기준: KST)
+function toKST(isoStr) {
+  if (!isoStr) return '—';
+  return new Date(isoStr).toLocaleTimeString('en-GB', {
+    hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Seoul'
+  });
+}
+
+// 섬머타임 감지 (미국 동부 기준) — 개장선 표시용
+function isEDT() {
+  const now = new Date();
+  const etStr = now.toLocaleString('en-US', { timeZone: 'America/New_York', timeZoneName: 'short' });
+  return etStr.includes('EDT');
+}
+
+window.addEventListener('DOMContentLoaded', async () => {
+  // 0DTE 탭 기본 로드 (Greeks/strikes — REST)
+  load0DTE();
+  auto0DTEInterval = setInterval(load0DTE, 60000);
+
+  // ── WebSocket 연결 (현재가 + VIX/VVIX/VOLD 실시간 수신) ──
+  connectWS();
+});
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// WebSocket 연결 관리
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+let _ws = null;
+let _wsReconnectTimer = null;
+
+function connectWS() {
+  if (_ws && (_ws.readyState === WebSocket.OPEN || _ws.readyState === WebSocket.CONNECTING)) return;
+  console.log('[WS] 연결 시도...');
+  const wsEl = document.getElementById('ws-status-text');
+  if (wsEl) wsEl.textContent = '연결 중...';
+
+  _ws = new WebSocket(WS_URL);
+
+  _ws.onopen = () => {
+    console.log('[WS] 연결 성공');
+    if (wsEl) { wsEl.textContent = '🟢 WS LIVE'; wsEl.style.color = 'var(--green)'; }
+    setStatus('live');
+    if (_wsReconnectTimer) { clearTimeout(_wsReconnectTimer); _wsReconnectTimer = null; }
+  };
+
+  _ws.onmessage = (e) => {
+    try {
+      const { type, data, ts } = JSON.parse(e.data);
+      if      (type === 'init')   onWSInit(data);
+      else if (type === 'prices') onWSPrices(data);
+      else if (type === 'market') onWSMarket(data);
+      else if (type === 'greeks') onWSGreeks(data);
+    } catch (err) { console.warn('[WS] 파싱 오류:', err.message); }
+  };
+
+  _ws.onclose = () => {
+    console.warn('[WS] 연결 종료 — 10초 후 재연결');
+    if (wsEl) { wsEl.textContent = '🔴 WS 끊김'; wsEl.style.color = 'var(--red)'; }
+    setStatus('error');
+    if (!_wsReconnectTimer) {
+      _wsReconnectTimer = setTimeout(() => { _wsReconnectTimer = null; connectWS(); }, 10000);
+    }
+  };
+
+  _ws.onerror = (e) => { console.warn('[WS] 오류'); _ws.close(); };
+}
+
+// ── init: 연결 즉시 전체 상태 수신 ──
+function onWSInit({ prices, market }) {
+  if (prices) onWSPrices(prices);
+  if (market) onWSMarket(market);
+}
+
+// ── prices: Finnhub 거래 발생 시 푸시 ──
+function onWSPrices(prices) {
+  const sym = document.getElementById('sym-select-0dte')?.value || 'SPY';
+  const d = prices[sym];
+  if (!d || d.price == null) return;
+
+  const newSpot = d.price;
+  window._lastPriceJson = {
+    price: newSpot,
+    prevClose: d.prevClose,
+    prevChange: d.change,
+    marketState: 'REGULAR',
+  };
+
+  // 현재가 메트릭 카드 업데이트
+  const spotEl = document.getElementById('metric-spot-0dte');
+  if (spotEl && newSpot) {
+    const pctStr = d.change != null ? ` ${d.change > 0 ? '+' : ''}${d.change.toFixed(2)}%` : '';
+    spotEl.querySelector('.val').textContent = `$${newSpot.toFixed(2)}`;
+    spotEl.querySelector('.lbl').textContent = `현재가${pctStr}`;
+    spotEl.className = 'metric ' + (d.change > 0 ? 'green' : d.change < 0 ? 'red' : '');
+  }
+}
+
+// ── market: 1분 Cron VIX/VVIX/VOLD/VV ──
+function onWSMarket(data) {
+  // VIX
+  if (data.vix != null) {
+    vixVal = data.vix;
+    vixPriceHistory.push(vixVal);
+    if (vixPriceHistory.length > 120) vixPriceHistory.shift();
+    const vixDiv = detectVIXDivergence(vixPriceHistory, 'VIX');
+    pushDivergenceEvent(vixDiv, 'VIX');
+  }
+  // VVIX
+  if (data.vvix != null) {
+    vvixVal = data.vvix;
+    vvixPriceHistory.push(vvixVal);
+    if (vvixPriceHistory.length > 120) vvixPriceHistory.shift();
+    const vvixDiv = detectVIXDivergence(vvixPriceHistory, 'VVIX');
+    pushDivergenceEvent(vvixDiv, 'VVIX');
+  }
+  // VV
+  if (data.vv != null && vcHistory.length > 0) {
+    vcHistory[vcHistory.length - 1].vv = data.vv;
+  }
+  // VOLD
+  if (data.vold != null) {
+    window._lastVold = data.vold;
+  }
+
+  window._lastVixJson = {
+    VIX:  { price: data.vix,  pctChange: null },
+    VVIX: { price: data.vvix, pctChange: null },
+  };
+  window._lastMarket = data;
+
+  updateVIXMetrics();
+}
+
+// ── greeks: 15분 Cron Greeks 업데이트 ──
+function onWSGreeks(data) {
+  // 현재 선택된 심볼과 일치하면 currentD 업데이트
+  const sym = document.getElementById('sym-select-0dte')?.value || 'SPY';
+  if (data.symbol === sym && currentD) {
+    currentD.flipZone = data.flipZone ?? currentD.flipZone;
+    currentD.putWall  = data.putWall  ?? currentD.putWall;
+    currentD.callWall = data.callWall ?? currentD.callWall;
+    currentD.totalGEX = (data.totalGEX ?? 0) * 1e6;
+    currentD.localGEX = (data.localGEX ?? 0) * 1e6;
+    currentD.pcr      = data.pcr      ?? currentD.pcr;
+    console.log('[WS Greeks]', sym, 'vanna=', data.vanna, 'charm=', data.charm);
+  }
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// RSI 계산 (Wilder RMA 방식, Pine Script 동일)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+function calcRSI(prices, length = 14) {
+  if (prices.length < length + 1) return [];
+  const rsiArr = new Array(prices.length).fill(null);
+  // 초기 SMA 시드
+  let gains = 0, losses = 0;
+  for (let i = 1; i <= length; i++) {
+    const chg = prices[i] - prices[i - 1];
+    if (chg > 0) gains += chg; else losses -= chg;
+  }
+  let avgGain = gains / length;
+  let avgLoss = losses / length;
+  rsiArr[length] = avgLoss === 0 ? 100 : 100 - (100 / (1 + avgGain / avgLoss));
+  // Wilder RMA
+  for (let i = length + 1; i < prices.length; i++) {
+    const chg = prices[i] - prices[i - 1];
+    const g = chg > 0 ? chg : 0;
+    const l = chg < 0 ? -chg : 0;
+    avgGain = (avgGain * (length - 1) + g) / length;
+    avgLoss = (avgLoss * (length - 1) + l) / length;
+    rsiArr[i] = avgLoss === 0 ? 100 : avgGain === 0 ? 0 : 100 - (100 / (1 + avgGain / avgLoss));
+  }
+  return rsiArr;
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 피벗 고점/저점 감지 (Pine Script pivothigh/pivotlow 동일)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+function findPivots(arr, left = 5, right = 5) {
+  const highs = [], lows = [];
+  for (let i = left; i < arr.length - right; i++) {
+    if (arr[i] == null) continue;
+    let isHigh = true, isLow = true;
+    for (let j = i - left; j <= i + right; j++) {
+      if (j === i || arr[j] == null) continue;
+      if (arr[j] >= arr[i]) isHigh = false;
+      if (arr[j] <= arr[i]) isLow = false;
+    }
+    if (isHigh) highs.push({ idx: i, val: arr[i] });
+    if (isLow)  lows.push({ idx: i, val: arr[i] });
+  }
+  return { highs, lows };
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// VIX/VVIX RSI 다이버전스 감지
+// Pine Script 로직 충실히 변환:
+//   Bearish: 가격 HH + RSI LH → VIX 모멘텀 약화 (시장 하락 압력 완화)
+//   Bullish: 가격 LL + RSI HL → VIX 모멘텀 강화 (시장 하락 압력 재개)
+// rangeLower=5, rangeUpper=60 (피벗 간 최소/최대 봉 수)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+const divState = {
+  VIX:  { bear: 0, bull: 0 },
+  VVIX: { bear: 0, bull: 0 },
+};
+
+function detectVIXDivergence(prices, symKey, rangeLower = 5, rangeUpper = 60) {
+  if (prices.length < 30) return null; // 데이터 부족
+
+  const rsiArr = calcRSI(prices, 14);
+  const LEFT = 5, RIGHT = 5;
+  const pricePivots = findPivots(prices, LEFT, RIGHT);
+  const rsiPivots   = findPivots(rsiArr,  LEFT, RIGHT);
+
+  // 최신 피벗 기준 (끝에서 가장 최근 2개)
+  const lastPH  = pricePivots.highs.slice(-1)[0];
+  const prevPH  = pricePivots.highs.slice(-2)[0];
+  const lastPL  = pricePivots.lows.slice(-1)[0];
+  const prevPL  = pricePivots.lows.slice(-2)[0];
+  const lastRH  = rsiPivots.highs.slice(-1)[0];
+  const prevRH  = rsiPivots.highs.slice(-2)[0];
+  const lastRL  = rsiPivots.lows.slice(-1)[0];
+  const prevRL  = rsiPivots.lows.slice(-2)[0];
+
+  const inRange = (a, b) => {
+    const bars = Math.abs(a.idx - b.idx);
+    return bars >= rangeLower && bars <= rangeUpper;
+  };
+
+  let bearCond = false, bullCond = false;
+
+  // Bearish: 가격 HH + RSI LH (VIX 상승 모멘텀 약화)
+  if (lastPH && prevPH && lastRH && prevRH && inRange(lastPH, prevPH)) {
+    const priceHH = lastPH.val > prevPH.val;
+    const rsiLH   = lastRH.val < prevRH.val;
+    bearCond = priceHH && rsiLH;
+  }
+
+  // Bullish: 가격 LL + RSI HL (VIX 하락 모멘텀 약화 → 반등 가능)
+  if (lastPL && prevPL && lastRL && prevRL && inRange(lastPL, prevPL)) {
+    const priceLL = lastPL.val < prevPL.val;
+    const rsiHL   = lastRL.val > prevRL.val;
+    bullCond = priceLL && rsiHL;
+  }
+
+  const state = divState[symKey];
+  if (bearCond) {
+    state.bear++;
+    state.bull = 0;
+    return { type: 'bear', count: state.bear };
+  }
+  if (bullCond) {
+    state.bull++;
+    state.bear = 0;
+    return { type: 'bull', count: state.bull };
+  }
+  // 신호 없으면 카운터 유지 (연속성 기록)
+  return null;
+}
+
+// VIX 히스토리 (다이버전스용, 최대 120개)
+let vixPriceHistory  = [];
+let vvixPriceHistory = [];
+
+// 다이버전스 이벤트 → 실시간 판단 패널에 추가
+function pushDivergenceEvent(div, symKey) {
+  if (!div) return;
+  const now = new Date();
+  const timeStr = toKST(now.toISOString());
+  const countStr = div.count > 1 ? ` (${div.count}회 연속)` : ' (1회)';
+
+  let cls, msg;
+  if (symKey === 'VIX') {
+    if (div.type === 'bear') {
+      cls = 'le-good';
+      msg = `🟢 VIX Bearish Divergence${countStr} — VIX 상승 모멘텀 약화. 하락 압력 완화 가능. Vanna 구조 확인 권장`;
+    } else {
+      cls = 'le-warn';
+      msg = `🔴 VIX Bullish Divergence${countStr} — VIX 하락 모멘텀 약화. 변동성 재상승 주의`;
+    }
+  } else {
+    if (div.type === 'bear') {
+      cls = 'le-good';
+      msg = `🟢 VVIX Bearish Divergence${countStr} — VVIX 모멘텀 약화. VIX 상승 선행 압력 완화`;
+    } else {
+      cls = 'le-warn';
+      msg = `🔴 VVIX Bullish Divergence${countStr} — VVIX 재상승 가능. VIX 선행 급등 주의`;
+    }
+  }
+
+  liveEvents.unshift({ time: timeStr, cls, msg });
+  if (liveEvents.length > 15) liveEvents = liveEvents.slice(0, 15);
+}
+
+function updateVIXMetrics() {
+  const vm = document.getElementById('metric-vix');
+  if (vm && vixVal != null) {
+    const pctChange = window._lastVixJson?.VIX?.pctChange;
+    const pctStr = pctChange != null
+      ? ` <span style="font-size:12px;opacity:.75">(${pctChange>0?'+':''}${pctChange.toFixed(1)}%)</span>` : '';
+    vm.querySelector('.val').innerHTML = vixVal.toFixed(2) + pctStr;
+    vm.className = 'metric ' + (vixVal>30?'danger':vixVal>20?'warn':'yellow');
+  }
+
+  // VV 업데이트
+  const vvEl = document.getElementById('metric-vv');
+  if (vvEl && vcHistory.length > 0) {
+    const lastVV = vcHistory.filter(h => h.vv != null).slice(-1)[0]?.vv;
+    if (lastVV != null) {
+      const sign = lastVV >= 0 ? '+' : '';
+      const color = lastVV > 0.05 ? 'var(--red)' : lastVV < -0.05 ? 'var(--green)' : 'var(--text3)';
+      vvEl.textContent = `VV ${sign}${lastVV.toFixed(3)}`;
+      vvEl.style.color = color;
+    }
+  }
+
+  // VOLD 메트릭 카드 업데이트 (OBV 대체)
+  const voldCard    = document.getElementById('metric-obv');
+  const voldValEl   = document.getElementById('metric-obv-val');
+  const voldSlopeEl = document.getElementById('metric-obv-slope');
+  const vold = window._lastVold ?? null;
+  if (voldValEl && vold != null) {
+    const fmt = v => {
+      const abs = Math.abs(v), sign = v < 0 ? '-' : '+';
+      if (abs >= 1e9) return sign + (abs/1e9).toFixed(2) + 'B';
+      if (abs >= 1e6) return sign + (abs/1e6).toFixed(2) + 'M';
+      if (abs >= 1e3) return sign + (abs/1e3).toFixed(0) + 'K';
+      return String(Math.round(v));
+    };
+    voldValEl.textContent = fmt(vold);
+    if (voldSlopeEl) {
+      const dir = vold > 0 ? '↑ 매수우위' : vold < 0 ? '↓ 매도우위' : '→ 중립';
+      voldSlopeEl.textContent = dir;
+      voldSlopeEl.style.color = vold > 0 ? 'var(--green)' : vold < 0 ? 'var(--red)' : 'var(--text3)';
+    }
+    if (voldCard) {
+      voldCard.className = 'metric ' + (vold > 0 ? 'green' : vold < 0 ? 'red' : '');
+    }
+  }
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Vanna / Charm 계산 (safeT 클램핑으로 수치 안정화)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+function calculateVannaCharm(strikes, spotPrice, expDate) {
+  const msToExp = new Date(expDate) - new Date();
+  const T = Math.max(msToExp / (1000*60*60*24*365), 1/365);
+  const safeT = Math.max(T, 0.5/365);
+  const r = 0.045;
+  let totalVanna = 0, totalCharm = 0;
+  strikes.forEach(s => {
+    const K = s.strike;
+    const sigma = s.iv > 0 ? s.iv : 0.20;
+    const sqrtT = Math.sqrt(T);
+    const safeSqrtT = Math.sqrt(safeT);
+    const lnSK = Math.log(spotPrice / K);
+    const d1 = (lnSK + (r + sigma*sigma/2)*T) / (sigma * sqrtT);
+    const d2 = d1 - sigma * sqrtT;
+    const nd1 = Math.exp(-d1*d1/2) / Math.sqrt(2*Math.PI);
+    const netOI = s.callOI - s.putOI;
+    const vanna = nd1 * (d2 / sigma) * netOI * 100 * spotPrice;
+    totalVanna += isFinite(vanna) ? vanna : 0;
+    const charm = -nd1 * (r/(sigma*safeSqrtT) - d2/(2*safeT)) * netOI * 100;
+    totalCharm += isFinite(charm) ? charm : 0;
+  });
+  return { totalVanna: totalVanna/1e6, totalCharm: totalCharm/1e6 };
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Greek 힘의 균형 계산
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+function calcForceBalance(vc, d, vix, vvix) {
+  const { totalVanna, totalCharm } = vc;
+  const { localGEX, totalGEX, flipZone, spotPrice } = d;
+
+  // Vanna 활성도: VIX 변화율 × Vanna 절대값
+  const vixHistory = priceHistory.slice(-5).map(h=>h.vix).filter(Boolean);
+  const vixChange = vixHistory.length >= 2
+    ? (vixHistory[vixHistory.length-1] - vixHistory[0]) / vixHistory[0] * 100
+    : 0;
+
+  // 각 Greek 강도 (0~100%)
+  const vannaStrength = Math.min(Math.abs(totalVanna) / 50 * 100, 100);
+  const charmStrength = Math.min(Math.abs(totalCharm) / 20 * 100, 100);
+  const gexStrength = Math.min(Math.abs(localGEX/1e6) / 50 * 100, 100);
+
+  // Vanna 활성화 여부 (VIX 움직임 필요)
+  const vannaActive = Math.abs(vixChange) > 0.5;
+  const vannaDir = totalVanna < 0 ? 'sell' : 'buy'; // 음수Vanna = VIX상승시 매도
+
+  // Charm 활성화 여부 (시간 기반)
+  const now = new Date();
+  const est = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+  const estHour = est.getHours() + est.getMinutes()/60;
+  const isAfternoon = estHour >= 13 && estHour < 16;
+  const charmDir = totalCharm < 0 ? 'buy' : 'sell';
+  const charmActive = isAfternoon;
+
+  // GEX 방향
+  const gexDir = totalGEX >= 0 ? 'pin' : 'trend';
+
+  // Flip Zone 거리
+  const flipDist = flipZone ? Math.abs(spotPrice - flipZone) / spotPrice * 100 : 999;
+  const flipDanger = flipDist < 1.0;
+
+  return {
+    vanna: { strength: vannaStrength, dir: vannaDir, active: vannaActive, value: totalVanna, vixChange },
+    charm: { strength: charmStrength, dir: charmDir, active: charmActive, value: totalCharm },
+    gex: { strength: gexStrength, dir: gexDir, value: localGEX/1e6 },
+    flipDist, flipDanger, flipZone,
+    estHour, isAfternoon
+  };
+}
+
+function getBarColor(pct) {
+  if (pct >= 70) return 'var(--red)';
+  if (pct >= 40) return 'var(--yellow)';
+  return 'var(--green)';
+}
+
+function renderGreekMetrics(force) {
+  const { vanna, charm, gex, flipDist, flipDanger, flipZone } = force;
+
+  // ── Vanna 신호등 ──
+  // 5분 전 대비 절대값 변화로 판단
+  const vannaHistory = vcHistory.slice(-5).map(h => Math.abs(h.vanna)).filter(v => v > 0);
+  let vannaSignal = '⚪'; // 데이터 부족
+  let vannaArrow = '';
+  if (vannaHistory.length >= 2) {
+    const prev = vannaHistory[0];
+    const curr = vannaHistory[vannaHistory.length - 1];
+    const chg = (curr - prev) / prev * 100;
+    if (chg > 5)       { vannaSignal = '🔴'; vannaArrow = ' ↑'; } // 강해짐 (더 위험)
+    else if (chg < -5) { vannaSignal = '🟢'; vannaArrow = ' ↓'; } // 약해짐 (완화)
+    else               { vannaSignal = '🟡'; vannaArrow = ' →'; } // 비슷
+  }
+
+  // ── Charm 신호등 ──
+  // 오후 1시(ET) 이후 활성화, 음수(매수드리프트)면 초록
+  const charmSignal = charm.active
+    ? (charm.dir === 'buy' ? '🟢' : '🔴')
+    : '⚪';
+  const charmArrow = charm.active ? ' 활성' : ' 대기';
+
+  // ── GEX 신호등 ──
+  const gexSignal = gex.dir === 'pin' ? '🟢' : '🔴';
+  const gexArrow = gex.dir === 'pin' ? ' 피닝' : ' 추세증폭';
+
+  // ── Vanna 값 색상 ──
+  const vannaColor = vanna.dir === 'sell' ? 'var(--red)' : 'var(--green)';
+  const charmColor = charm.dir === 'buy'  ? 'var(--green)' : 'var(--red)';
+  const gexColor   = gex.dir === 'pin'   ? 'var(--green)' : 'var(--red)';
+
+  // ── 지배 Greek 판단 ──
+  let dominant = '';
+  const vannaAbs = Math.abs(vanna.value);
+  const charmAbs = Math.abs(charm.value);
+  if (gex.dir === 'pin' && Math.abs(gex.value) > 500)
+    dominant = 'GEX 피닝 지배 — 큰 방향성 어려움';
+  else if (vanna.active && vannaAbs > charmAbs * 5)
+    dominant = `Vanna ${vanna.dir === 'sell' ? '매도' : '매수'} 압력 지배`;
+  else if (charm.active && charmAbs > 200)
+    dominant = `Charm ${charm.dir === 'buy' ? '매수' : '매도'} 드리프트 작동`;
+  else
+    dominant = '뚜렷한 지배 Greek 없음';
+
+  // ── DOM 업데이트 ──
+  const set = (id, val) => { const el=document.getElementById(id); if(el) el.innerHTML=val; };
+  const setStyle = (id, prop, val) => { const el=document.getElementById(id); if(el) el.style[prop]=val; };
+
+  // dot 색상: 부호 기준 (양수=초록, 음수=빨강)
+  setStyle('gmc-vanna-dot', 'background', vanna.value >= 0 ? 'var(--green)' : 'var(--red)');
+  setStyle('gmc-charm-dot', 'background', charm.value >= 0 ? 'var(--green)' : 'var(--red)');
+  setStyle('gmc-gex-dot',   'background', gex.value   >= 0 ? 'var(--green)' : 'var(--red)');
+
+  set('gmc-vanna-signal', vannaSignal);
+  set('gmc-vanna-val', `<span style="color:${vannaColor}">${vanna.value >= 0 ? '+' : ''}${vanna.value.toFixed(0)}M</span>`);
+  set('gmc-vanna-desc', `${vanna.dir === 'sell' ? 'VIX↑ 매도압력' : 'VIX↑ 매수압력'}${vannaArrow}${vanna.vixChange !== 0 ? ` · VIX ${vanna.vixChange>0?'+':''}${vanna.vixChange.toFixed(1)}%` : ''}`);
+
+  set('gmc-charm-signal', charmSignal);
+  set('gmc-charm-val', `<span style="color:${charmColor}">${charm.value >= 0 ? '+' : ''}${charm.value.toFixed(0)}M</span>`);
+  set('gmc-charm-desc', `${charm.dir === 'buy' ? '매수 드리프트' : '매도 드리프트'}${charmArrow}`);
+
+  set('gmc-gex-signal', gexSignal);
+  set('gmc-gex-val', `<span style="color:${gexColor}">${gex.value > 0 ? '+' : ''}${gex.value.toFixed(0)}M</span>`);
+  set('gmc-gex-desc', `로컬 GEX${gexArrow}`);
+
+  set('gmc-dominant-val', dominant);
+  set('gmc-flip-desc', flipZone
+    ? (flipDanger
+      ? `<span style="color:var(--red);font-weight:600">⚡ Flip Zone ${flipDist.toFixed(1)}% 극근접</span>`
+      : `Flip Zone ${flipDist.toFixed(1)}% 하방`)
+    : 'Flip Zone 없음'
+  );
+}
+
+// 레거시 호환용
+function renderForceSidebar(force) {
+  renderGreekMetrics(force);
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// VannaCharm 차트 렌더 (CBOE 기반 누적)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+// 섬머타임 감지 및 시간 변환은 DOMContentLoaded 위 toKST / isEDT 함수로 통합
+// estToKST는 하위 호환 래퍼로 유지 (차트 내 직접 참조 제거됨)
+function estToKST(timeStr) {
+  if (!timeStr || !timeStr.includes(':')) return timeStr;
+  const [h, m] = timeStr.split(':').map(Number);
+  const offset = isEDT() ? 13 : 14;
+  const kstH = (h + offset) % 24;
+  return `${String(kstH).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 멀티페인 차트 헬퍼
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+let vcPaneVC = null, vcPaneVV = null, vcPaneOBV = null;
+let vcZoomLevel = 4; // 기본 2H (16시간 전체 기준 8배)
+let vcTotalSlots = 192; // 전체 시간축 슬롯 수 (16시간 × 12)
+
+// 시간범위 → zoom 레벨 변환 (전체 16시간 기준)
+const VC_RANGE_ZOOM = { '2h': 8, '4h': 4, '8h': 2, '1d': 1, 'all': 0.5 };
+const VC_RANGE_LABEL = { '2h': '2H', '4h': '4H', '8h': '8H', '1d': '1D', 'all': 'ALL' };
+
+function setVCRange(range) {
+  vcZoomLevel = VC_RANGE_ZOOM[range] || 4;
+  const lbl = document.getElementById('vc-zoom-val');
+  if (lbl) lbl.textContent = VC_RANGE_LABEL[range] || range.toUpperCase();
+  const sl = document.getElementById('vc-zoom-slider');
+  if (sl) sl.value = vcZoomLevel * 2;
+  ['2h','4h','8h','1d','all'].forEach(r => {
+    const btn = document.getElementById('vcrange-' + r);
+    if (btn) btn.className = 'vc-range-btn' + (r === range ? ' active' : '');
+  });
+  renderVCChart(); // ← OI 차트와 동일하게 재렌더
+}
+
+function onVCSlider(val) {
+  vcZoomLevel = parseFloat(val) / 2;
+  const lbl = document.getElementById('vc-zoom-val');
+  if (lbl) lbl.textContent = vcZoomLevel.toFixed(1) + '×';
+  ['2h','4h','8h','1d','all'].forEach(r => {
+    const btn = document.getElementById('vcrange-' + r);
+    if (btn) btn.className = 'vc-range-btn';
+  });
+  renderVCChart(); // ← OI 차트와 동일하게 재렌더
+}
+
+// ── 확대/스크롤만 조정 (차트 재렌더 없음) ──
+function updateVCZoom() {
+  const wrap = document.getElementById('vc-multipane-wrap');
+  const inner = document.getElementById('vc-multipane-inner');
+  if (!wrap || !inner) return;
+
+  const baseW = wrap.clientWidth || window.innerWidth - 56;
+  const newW = Math.round(baseW * vcZoomLevel);
+  inner.style.width = newW + 'px';
+
+  // 현재 시간 위치 계산 → 화면 중앙에 오도록 스크롤 (UTC ISO 기준)
+  const nowMs = Date.now();
+  const etOff = new Date().toLocaleString('en-US', { timeZone: 'America/New_York', timeZoneName: 'short' }).includes('EDT') ? 4 : 5;
+  const todayEstStr = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+  const preMs = new Date(`${todayEstStr}T${String(PRE_START_EST + etOff).padStart(2,'0')}:00:00Z`).getTime();
+  const totalMs = TOTAL_SLOTS * 5 * 60000;
+  const nowRatio = Math.max(0, Math.min(1, (nowMs - preMs) / totalMs));
+
+  // 현재 시간이 화면 중앙에 오도록
+  const nowPx = newW * nowRatio;
+  const scrollTarget = Math.max(0, nowPx - baseW / 2);
+
+  requestAnimationFrame(() => {
+    wrap.scrollLeft = scrollTarget;
+  });
+}
+
+function syncVCPanes(scrollLeft) {
+  // 멀티페인 wrap이 하나이므로 별도 동기화 불필요
+}
+
+function destroyVCPanes() {
+  if (vcPaneVC)  { try { vcPaneVC.destroy(); }  catch(_){} vcPaneVC  = null; }
+  if (vcPaneVV)  { try { vcPaneVV.destroy(); }  catch(_){} vcPaneVV  = null; }
+  if (vcPaneOBV) { try { vcPaneOBV.destroy(); } catch(_){} vcPaneOBV = null; }
+  [['vc-pane-vc','vc-pane-vc-wrap'],['vc-pane-vv','vc-pane-vv-wrap'],['vc-pane-obv','vc-pane-obv-wrap']].forEach(([canvasId, wrapId]) => {
+    const wrapEl = document.getElementById(wrapId);
+    if (wrapEl) wrapEl.innerHTML = `<canvas id="${canvasId}"></canvas>`;
+  });
+}
+
+function renderVCChart() {
+  // DOM이 아직 준비 안 됐으면 재시도
+  if (!document.getElementById('vc-pane-vc')) {
+    setTimeout(renderVCChart, 50);
+    return;
+  }
+
+  if (vcHistory.length === 0) {
+    const bar = document.getElementById('vc-signal-bar');
+    if (bar) {
+      document.getElementById('vc-signal-icon').textContent = '—';
+      document.getElementById('vc-signal-text').textContent = '데이터 누적 중... (KST 17:00(EDT)/18:00(EST) 프리마켓부터 5분 Cron 자동 적재)';
+      document.getElementById('vc-signal-text').style.color = 'var(--text3)';
+    }
+    return;
+  }
+
+  // ── 전체 고정 시간축 (UTC ISO 기준으로 생성, 표시는 toKST 변환) ──
+  // 프리마켓 시작: EST 04:00 = UTC 09:00 (EDT) 또는 UTC 08:00 (EST)
+  // 브라우저 toKST()가 자동 변환하므로 UTC 기준으로 슬롯만 생성
+  const PRE_START_EST = 4; // 04:00 EST
+  const TOTAL_SLOTS = 192;
+  vcTotalSlots = TOTAL_SLOTS;
+
+  // 오늘 날짜(EST 기준) + 04:00 EST의 UTC 시각 계산
+  const nowEST_c = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
+  const todayStrEST = nowEST_c.toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+  // "2026-04-17T04:00:00" + America/New_York → UTC ISO 배열 생성
+  const preStartUTC = new Date(`${todayStrEST}T${String(PRE_START_EST).padStart(2,'0')}:00:00`);
+  // EST offset: EDT=-4, EST=-5 → UTC = localTime + offset
+  // 브라우저 독립적으로: America/New_York 04:00를 UTC로 변환
+  const preStartUtcMs = (() => {
+    // 더미 날짜 string을 뉴욕 시각으로 파싱
+    const s = `${todayStrEST}T04:00:00`;
+    // toLocaleString 역산 (브라우저 타임존 무관)
+    const d = new Date(s + ' EST'); // 대략적 파싱
+    // 정확한 방법: Intl.DateTimeFormat 활용
+    const fmt = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/New_York',
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
+    });
+    // 오늘 00:00 UTC 기준으로 찾기
+    let probe = new Date(`${todayStrEST}T00:00:00Z`);
+    // 뉴욕 04:00에 해당하는 UTC 찾기 (브루트포스: ±1분 이내)
+    // 실제 오프셋: EDT=UTC-4, EST=UTC-5
+    const etStr = new Date().toLocaleString('en-US', { timeZone: 'America/New_York', timeZoneName: 'short' });
+    const offsetH = etStr.includes('EDT') ? 4 : 5;
+    return new Date(`${todayStrEST}T${String(PRE_START_EST + offsetH).padStart(2,'0')}:00:00Z`).getTime();
+  })();
+
+  // 5분 간격 UTC ISO 배열 (TOTAL_SLOTS개)
+  const fullAxisISO = [];
+  for (let i = 0; i < TOTAL_SLOTS; i++) {
+    fullAxisISO.push(new Date(preStartUtcMs + i * 5 * 60000).toISOString());
+  }
+
+  // 표시용 KST 레이블 (toKST 사용)
+  const labels = fullAxisISO.map(iso => toKST(iso));
+
+  // 데이터 매핑: KV의 iso 키(정확히 5분 간격이 아닐 수 있음) → 가장 가까운 슬롯에 매핑
+  const dataMap = {};
+  vcHistory.forEach(h => {
+    if (!h.iso) {
+      // 구버전 데이터 (time 키): 스킵하거나 추정
+      return;
+    }
+    const hMs = new Date(h.iso).getTime();
+    // 가장 가까운 슬롯 인덱스
+    const idx = Math.round((hMs - preStartUtcMs) / (5 * 60000));
+    if (idx >= 0 && idx < TOTAL_SLOTS) {
+      dataMap[fullAxisISO[idx]] = h;
+    }
+  });
+
+  const vannaD = fullAxisISO.map(iso => dataMap[iso]?.vanna ?? null);
+  const charmD = fullAxisISO.map(iso => dataMap[iso]?.charm ?? null);
+  // VOLD: vcHistory에 vold 필드 없으면 window._lastVold 최신값 사용
+  const voldD  = fullAxisISO.map(iso => dataMap[iso]?.vold != null ? dataMap[iso].vold / 1e6 : null);
+
+  // VV 누적 (개장 시 리셋 — EST 09:30 = UTC+4 또는 UTC+5)
+  const etOffset = new Date().toLocaleString('en-US', { timeZone: 'America/New_York', timeZoneName: 'short' }).includes('EDT') ? 4 : 5;
+  const openUTC = new Date(`${todayStrEST}T${String(9 + etOffset).padStart(2,'0')}:30:00Z`).toISOString();
+  let vvCum = 0;
+  const vvD = fullAxisISO.map(iso => {
+    if (iso >= openUTC && fullAxisISO[fullAxisISO.indexOf(iso) - 1] < openUTC) vvCum = 0;
+    const v = dataMap[iso]?.vv;
+    if (v != null) vvCum += v;
+    return dataMap[iso] != null ? vvCum : null;
+  });
+
+  // ── inner/wrap 너비 설정 (OI 차트 동일 방식) ──
+  const wrap = document.getElementById('vc-multipane-wrap');
+  const inner = document.getElementById('vc-multipane-inner');
+  const baseW = wrap ? (wrap.clientWidth || window.innerWidth - 56) : 800;
+  const chartW = Math.round(baseW * vcZoomLevel);
+  if (inner) inner.style.width = chartW + 'px';
+  ['vc-pane-vc-wrap','vc-pane-vv-wrap','vc-pane-obv-wrap'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.width = chartW + 'px';
+  });
+
+  const mFmt = v => {
+    if (v == null) return '';
+    const abs = Math.abs(v), sign = v < 0 ? '-' : '';
+    if (abs >= 1000) return sign + (abs/1000).toFixed(1) + 'B';
+    return sign + abs.toFixed(1) + 'M';
+  };
+
+  // ── 끝점 레이블 플러그인 (offsetY: 양수=아래, 음수=위) ──
+  const endLabelPlugin = (datasetIdx, labelFn, color, offsetY = -12) => ({
+    id: `endLabel_${datasetIdx}`,
+    afterDraw(chart) {
+      const ds = chart.data.datasets[datasetIdx];
+      if (!ds) return;
+      const data = ds.data;
+      let lastIdx = -1;
+      for (let i = data.length - 1; i >= 0; i--) {
+        if (data[i] != null) { lastIdx = i; break; }
+      }
+      if (lastIdx < 0) return;
+      const meta = chart.getDatasetMeta(datasetIdx);
+      const pt = meta.data[lastIdx];
+      if (!pt) return;
+      const { ctx, chartArea } = chart;
+      const label = labelFn(data[lastIdx]);
+      ctx.save();
+      ctx.font = 'bold 10px monospace';
+      const tw = ctx.measureText(label).width;
+      const x = Math.min(pt.x + 4, chartArea.right - tw - 4);
+      const y = pt.y + offsetY; // 위 또는 아래
+      ctx.fillStyle = color;
+      ctx.globalAlpha = 0.85;
+      ctx.fillRect(x - 2, y - 8, tw + 6, 16);
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = '#0d1117';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(label, x, y);
+      ctx.restore();
+    }
+  });
+
+  // ── sticky y축 플러그인 (OI 차트와 동일 방식) ──
+  const stickyYPlugin = (wrapId, yColor, fmtFn) => ({
+    id: `stickyY_${wrapId}`,
+    afterDraw(chart) {
+      const w = document.getElementById(wrapId);
+      if (!w) return;
+      const yScale = chart.scales['y'];
+      if (!yScale) return;
+      const scrollX = w.scrollLeft;
+      if (scrollX <= 0) return;
+      const { ctx, chartArea, height } = chart;
+      ctx.save();
+      const axisW = yScale.right;
+      ctx.fillStyle = '#161b22';
+      ctx.fillRect(scrollX, 0, axisW, height);
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = yColor;
+      ctx.font = '10px monospace';
+      yScale.ticks.forEach((tick, i) => {
+        const y = yScale.getPixelForTick(i);
+        ctx.fillText(fmtFn(tick.value), scrollX + axisW - 4, y);
+      });
+      ctx.strokeStyle = '#30363d';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(scrollX + axisW, chartArea.top);
+      ctx.lineTo(scrollX + axisW, chartArea.bottom);
+      ctx.stroke();
+      ctx.restore();
+    }
+  });
+
+  // ── 세션 수직선 플러그인 ──
+  const sessionPlugin = (labels) => ({
+    id: 'sessionLine',
+    afterDraw(chart) {
+      const { ctx, chartArea, scales } = chart;
+      if (!chartArea || !scales.x) return;
+      // 개장 시각 KST (EST 09:30 → KST 변환)
+      const openKST = estToKST('09:30');
+      const openIdx = labels.findIndex(t => t >= openKST);
+      if (openIdx < 0) return;
+      ctx.save();
+      ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4,4]);
+      const x = scales.x.getPixelForValue(openIdx);
+      ctx.beginPath();
+      ctx.moveTo(x, chartArea.top);
+      ctx.lineTo(x, chartArea.bottom);
+      ctx.stroke();
+      ctx.fillStyle = 'rgba(255,255,255,0.35)';
+      ctx.font = '9px monospace';
+      ctx.fillText('개장', x + 3, chartArea.top + 10);
+      ctx.restore();
+    }
+  });
+
+  const commonOpts = (color, fmtCb) => ({
+    responsive: true,
+    maintainAspectRatio: false,
+    animation: false,
+    interaction: { mode: 'index', intersect: false },
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        backgroundColor: '#161b22', borderColor: '#30363d', borderWidth: 1,
+        titleColor: '#e6edf3', bodyColor: '#8b949e', padding: 8,
+        filter: item => item.parsed.y !== null,
+        callbacks: { label: item => fmtCb(item) }
+      }
+    },
+    scales: {
+      x: {
+        ticks: { color: '#6e7681', font: { size: 10 }, maxRotation: 0, autoSkip: true, maxTicksLimit: 12 },
+        grid: { color: 'rgba(48,54,61,.4)' }
+      },
+      y: {
+        position: 'left',
+        ticks: { color, font: { size: 10 } },
+        grid: { color: 'rgba(48,54,61,.4)' },
+        afterDataLimits(s) {
+          const r = s.max - s.min;
+          const pad = r === 0 ? (Math.abs(s.max) * 0.3 || 0.01) : r * 0.2;
+          s.min -= pad; s.max += pad;
+        }
+      }
+    }
+  });
+
+  destroyVCPanes();
+
+  // ── 페인1: Vanna + Charm ──
+  const cvEl = document.getElementById('vc-pane-vc');
+  if (cvEl) {
+    const opts = commonOpts('#8b949e', item => `${item.dataset.label}: ${mFmt(item.parsed.y)}`);
+    opts.scales.y.ticks.callback = mFmt;
+    const lastVanna = vannaD.filter(v=>v!=null).slice(-1)[0];
+    const lastCharm = charmD.filter(v=>v!=null).slice(-1)[0];
+    vcPaneVC = new Chart(cvEl, {
+      type: 'line', data: {
+        labels,
+        datasets: [
+          { label:'Vanna', data: vannaD, borderColor:'#bc8cff', backgroundColor:'rgba(188,140,255,.08)', fill:true, borderWidth:2, pointRadius:0, pointHoverRadius:3, tension:0.3, spanGaps:true },
+          { label:'Charm', data: charmD, borderColor:'#58a6ff', backgroundColor:'transparent', fill:false, borderWidth:2, pointRadius:0, pointHoverRadius:3, tension:0.3, spanGaps:true },
+        ]
+      },
+      options: opts,
+      plugins: [
+        sessionPlugin(labels),
+        endLabelPlugin(0, v => `Vanna: ${mFmt(v)}`, '#bc8cff', -14), // Vanna 위쪽
+        endLabelPlugin(1, v => `Charm: ${mFmt(v)}`, '#58a6ff', +14), // Charm 아래쪽
+        stickyYPlugin('vc-pane-vc-wrap', '#8b949e', mFmt),
+      ]
+    });
+  }
+
+  // ── 페인2: VV ──
+  const vvEl = document.getElementById('vc-pane-vv');
+  const hasVV = vvD.some(v => v != null);
+  if (vvEl) {
+    if (!hasVV) {
+      vvEl.parentElement.innerHTML = '<div style="height:220px;display:flex;align-items:center;justify-content:center;color:var(--text3);font-size:12px">VV — Cron 적재 대기</div>';
+    } else {
+      const opts = commonOpts('#d29922', item => `VV 누적: ${item.parsed.y?.toFixed(4) ?? '—'} pt`);
+      opts.scales.y.ticks.callback = v => v?.toFixed(3);
+      opts.scales.y.grid = { color: ctx => ctx.tick.value === 0 ? 'rgba(255,255,255,0.25)' : 'rgba(48,54,61,.4)' };
+      const lastVV = vvD.filter(v=>v!=null).slice(-1)[0] ?? 0;
+      vcPaneVV = new Chart(vvEl, {
+        type: 'line', data: {
+          labels,
+          datasets: [{
+            label: 'VV 누적',
+            data: vvD,
+            segment: {
+              borderColor: ctx => (ctx.p1?.parsed?.y ?? 0) >= 0 ? '#d29922' : '#6b4c0a',
+              backgroundColor: ctx => (ctx.p1?.parsed?.y ?? 0) >= 0 ? 'rgba(210,153,34,0.15)' : 'rgba(107,76,10,0.20)',
+            },
+            fill: 'origin',
+            borderWidth: 2, pointRadius: 0, pointHoverRadius: 3, tension: 0, spanGaps: true,
+          }]
+        },
+        options: opts,
+        plugins: [
+          sessionPlugin(labels),
+          endLabelPlugin(0, v => `VV: ${v >= 0 ? '+' : ''}${v?.toFixed(4)}`, lastVV >= 0 ? '#d29922' : '#6b4c0a', -14),
+          stickyYPlugin('vc-pane-vv-wrap', '#d29922', v => v?.toFixed(3)),
+        ]
+      });
+    }
+  }
+
+  // ── 페인3: VOLD ──
+  const obvEl = document.getElementById('vc-pane-obv');
+  const hasVOLD = voldD.some(v => v != null);
+  if (obvEl) {
+    if (!hasVOLD) {
+      obvEl.parentElement.innerHTML = '<div style="height:220px;display:flex;align-items:center;justify-content:center;color:var(--text3);font-size:12px">VOLD — Cron 적재 대기 (서버 1분 Cron)</div>';
+    } else {
+      const opts = commonOpts('#3fb950', item => `VOLD: ${item.parsed.y != null ? (item.parsed.y >= 0 ? '+' : '') + item.parsed.y.toFixed(2) + 'M' : '—'}`);
+      opts.scales.y.ticks.callback = v => {
+        if (v == null) return '';
+        const abs = Math.abs(v), sign = v < 0 ? '-' : '+';
+        if (abs >= 1000) return sign + (abs/1000).toFixed(1) + 'B';
+        return sign + abs.toFixed(1) + 'M';
+      };
+      opts.scales.y.grid = { color: ctx => ctx.tick.value === 0 ? 'rgba(255,255,255,0.25)' : 'rgba(48,54,61,.4)' };
+      const lastVOLD = voldD.filter(v => v != null).slice(-1)[0] ?? 0;
+      vcPaneOBV = new Chart(obvEl, {
+        type: 'line', data: {
+          labels,
+          datasets: [{
+            label: 'VOLD',
+            data: voldD,
+            segment: {
+              borderColor: ctx => (ctx.p1?.parsed?.y ?? 0) >= 0 ? '#3fb950' : '#f85149',
+              backgroundColor: ctx => (ctx.p1?.parsed?.y ?? 0) >= 0 ? 'rgba(63,185,80,0.12)' : 'rgba(248,81,73,0.12)',
+            },
+            fill: 'origin',
+            borderWidth: 2, pointRadius: 0, pointHoverRadius: 3, tension: 0, spanGaps: true,
+          }]
+        },
+        options: opts,
+        plugins: [
+          sessionPlugin(labels),
+          endLabelPlugin(0, v => `VOLD: ${v >= 0 ? '+' : ''}${v?.toFixed(2)}M`, lastVOLD >= 0 ? '#3fb950' : '#f85149', -14),
+          stickyYPlugin('vc-pane-obv-wrap', '#3fb950', v => {
+            if (v == null) return '';
+            const abs = Math.abs(v), sign = v < 0 ? '-' : '+';
+            if (abs >= 1000) return sign + (abs/1000).toFixed(1) + 'B';
+            return sign + abs.toFixed(1) + 'M';
+          }),
+        ]
+      });
+    }
+  }
+
+  // 스크롤 이벤트 → 차트 재드로우 (sticky y축 갱신)
+  if (wrap) {
+    wrap._vcScrollHandler && wrap.removeEventListener('scroll', wrap._vcScrollHandler);
+    wrap._vcScrollHandler = () => {
+      if (vcPaneVC)  vcPaneVC.draw();
+      if (vcPaneVV)  vcPaneVV.draw();
+      if (vcPaneOBV) vcPaneOBV.draw();
+    };
+    wrap.addEventListener('scroll', wrap._vcScrollHandler, { passive: true });
+  }
+
+  // 신호등 업데이트
+  updateVCSignalBar(vcHistory.slice(-5));
+
+  // zoom/스크롤 적용
+  requestAnimationFrame(() => updateVCZoom());
+}
+
+function updateVCSignalBar(slice) {
+  if (slice.length < 3) return;
+  const last = slice[slice.length - 1];
+  const prev5 = slice.length >= 5 ? slice[slice.length - 5] : slice[0];
+
+  const vv = last.vv ?? 0;
+  const voldCur  = last.vold  ?? 0;
+  const voldPrev = prev5.vold ?? 0;
+  const voldDelta = voldCur - voldPrev;
+
+  const spotCur  = last.spot  ?? 0;
+  const spotPrev = prev5.spot ?? 0;
+  const priceDn  = spotCur < spotPrev;
+
+  let signalType = 'neutral', msg = '', color = 'var(--text3)';
+
+  const charmPositive = (last.charm ?? 0) < 0;
+  const hedgeSignal   = priceDn && Math.abs(voldDelta) < Math.abs(voldCur) * 0.05;
+
+  const fmtVold = v => {
+    const abs = Math.abs(v), sign = v < 0 ? '-' : '+';
+    if (abs >= 1000) return sign + (abs/1000).toFixed(1) + 'B';
+    return sign + abs.toFixed(1) + 'M';
+  };
+
+  if (hedgeSignal && charmPositive) {
+    signalType = 'yellow'; msg = '선물 헷지 의심 + Charm 매수 드리프트 대기 → Charm 반등 가능성 주의'; color = 'var(--yellow)';
+  } else if (vv > 0.05 && voldDelta < 0) {
+    signalType = 'red'; msg = `VV +${vv.toFixed(3)} · VOLD ↓ ${fmtVold(voldCur)} 수급 이탈 → 실제 하락 압력 확인`; color = 'var(--red)';
+  } else if (vv > 0.05 && voldDelta >= 0) {
+    signalType = 'yellow'; msg = `VV +${vv.toFixed(3)} · VOLD ${fmtVold(voldCur)} 유지 → 헷지 노이즈 가능, 추세 지속 확인 필요`; color = 'var(--yellow)';
+  } else if (vv < -0.05 && voldDelta > 0) {
+    signalType = 'green'; msg = `VV ${vv.toFixed(3)} · VOLD ↑ ${fmtVold(voldCur)} 수급 유입 → 상승 환경 확인`; color = 'var(--green)';
+  } else if (vv < -0.05 && voldDelta <= 0) {
+    signalType = 'yellow'; msg = `VV ${vv.toFixed(3)} · VOLD ${fmtVold(voldCur)} → VIX만 하락, 수급 미확인`; color = 'var(--yellow)';
+  } else {
+    signalType = 'neutral'; msg = `VV ${vv.toFixed(3)} · VOLD ${fmtVold(voldCur)} 중립 → 방향 대기`; color = 'var(--text3)';
+  }
+
+  // 애니메이션 인디케이터 업데이트
+  const indEl = document.getElementById('vc-signal-indicator');
+  if (indEl) {
+    const styleMap = {
+      green:   { bg: '#3fb950', anim: 'glow-green 1.5s ease-in-out infinite', radius: '3px' },
+      red:     { bg: '#f85149', anim: 'glow-red 1.2s ease-in-out infinite',   radius: '3px' },
+      yellow:  { bg: '#d29922', anim: 'glow-yellow 1.8s ease-in-out infinite', radius: '3px' },
+      neutral: { bg: 'var(--text3)', anim: 'pulse 2s ease-in-out infinite',   radius: '3px' },
+    };
+    const s = styleMap[signalType] || styleMap.neutral;
+    indEl.style.background = s.bg;
+    indEl.style.animation  = s.anim;
+    indEl.style.borderRadius = s.radius;
+  }
+
+  const textEl = document.getElementById('vc-signal-text');
+  if (textEl) { textEl.textContent = msg; textEl.style.color = color; textEl.style.fontWeight = signalType !== 'neutral' ? '700' : '500'; }
+
+  // 실시간 판단 패널 push (중요 신호만)
+  const now = new Date();
+  const evTimeStr = now.toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit', timeZone:'America/New_York' });
+  if (signalType === 'red' || signalType === 'green') {
+    liveEvents.unshift({ time: evTimeStr + ' ET', cls: signalType === 'red' ? 'le-warn' : 'le-good', msg });
+    if (liveEvents.length > 15) liveEvents = liveEvents.slice(0, 15);
+  }
+  if (signalType === 'yellow' && hedgeSignal) {
+    liveEvents.unshift({ time: evTimeStr + ' ET', cls: 'le-warn', msg });
+    if (liveEvents.length > 15) liveEvents = liveEvents.slice(0, 15);
+  }
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 통합 상황판단 — 고정 섹션
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+function buildFixedJudgment(d, vc) {
+  const { spotPrice, flipZone, putWall, callWall, localGEX, totalGEX, upStrikes, dnStrikes } = d;
+  const { totalVanna, totalCharm } = vc;
+  const items = [];
+
+  // GEX 구조
+  const localM = localGEX / 1e6;
+  if (totalGEX >= 0) {
+    let pinRange = '';
+    if (localM > 3000) pinRange = `예상 피닝 범위 $${(spotPrice*0.997).toFixed(0)} ~ $${(spotPrice*1.003).toFixed(0)} (±0.3%)`;
+    else if (localM > 1000) pinRange = `예상 피닝 범위 $${(spotPrice*0.995).toFixed(0)} ~ $${(spotPrice*1.005).toFixed(0)} (±0.5%)`;
+    else pinRange = `피닝 범위 넓음 (±1% 이상 가능)`;
+    items.push({ cls:'ji-green', icon:'✚', text:`<b>Positive GEX +${localM.toFixed(0)}M</b> — 오늘 큰 방향성 움직임 어렵습니다. ${pinRange}` });
+  } else {
+    items.push({ cls:'ji-red', icon:'▼', text:`<b>Negative GEX ${localM.toFixed(0)}M</b> — 딜러가 추세를 증폭합니다. 방향 한 번 잡히면 가속 가능` });
+  }
+
+  // Vanna / Charm + VC Ratio
+  const vcRatio = Math.abs(totalVanna) > 0 ? Math.abs(totalCharm) / Math.abs(totalVanna) : 0;
+  const vcRatioStr = vcRatio.toFixed(2);
+  const vcDom = vcRatio < 0.15 ? 'Vanna 완전 지배'
+              : vcRatio < 0.35 ? 'Vanna 우세, Charm 부차적'
+              : vcRatio < 0.65 ? 'Vanna·Charm 균형'
+              : vcRatio < 1.0  ? 'Charm 우세'
+              : 'Charm 지배';
+
+  if (Math.abs(totalVanna) > 100) {
+    if (totalVanna < 0) {
+      items.push({ cls:'ji-red', icon:'◈', text:`<b>Vanna ${totalVanna.toFixed(0)}M (음수)</b> — VIX 상승 시 딜러 매도 헷지 강화. VIX가 올라오면 하락 압력 가속됩니다` });
+    } else {
+      items.push({ cls:'ji-green', icon:'◈', text:`<b>Vanna ${totalVanna.toFixed(0)}M (양수)</b> — VIX 하락 시 딜러 매수 헷지. VIX가 내려오면 상승 지지력 강화됩니다` });
+    }
+  }
+
+  // Charm 구조 + VC Ratio
+  if (Math.abs(totalCharm) > 50) {
+    const charmDir = totalCharm < 0 ? '매수 드리프트' : '매도 드리프트';
+    const charmCls = totalCharm < 0 ? 'ji-blue' : 'ji-orange';
+    items.push({ cls: charmCls, icon:'⏱', text:
+      `<b>Charm ${totalCharm.toFixed(0)}M</b> — 오후 1시 이후 ${charmDir} 압력 작동. ` +
+      `<b>VC Ratio ${vcRatioStr}</b> (${vcDom}) — ` +
+      (vcRatio < 0.35
+        ? 'Vanna에 압도되어 Charm 실효성 제한적'
+        : vcRatio < 0.65
+        ? 'Charm이 부분적으로 방향에 기여 가능'
+        : 'Charm이 오후 흐름 주도 가능성 있음')
+    });
+  }
+
+  // Flip Zone
+  if (flipZone) {
+    const flipDist = Math.abs(spotPrice - flipZone) / spotPrice * 100;
+    if (flipDist < 0.5) {
+      items.push({ cls:'ji-red', icon:'⚡', text:`<b>Flip Zone $${flipZone} 극근접 (${flipDist.toFixed(2)}%)</b> — 이탈 시 딜러 방향 전환, 하락 가속 가능. 최우선 경계 레벨` });
+    } else if (flipDist < 1.5) {
+      items.push({ cls:'ji-yellow', icon:'⚠', text:`<b>Flip Zone $${flipZone} 근접 (${flipDist.toFixed(2)}%)</b> — 이탈 시 딜러 방향 전환. 하락 심화 가능` });
+    } else {
+      items.push({ cls:'ji-blue', icon:'○', text:`<b>Flip Zone $${flipZone}</b> — 현재가 대비 ${flipDist.toFixed(1)}% 하방. 당장 위협 아님` });
+    }
+  }
+
+  // Put Wall / Call Wall
+  if (putWall) {
+    const putDist = (spotPrice - putWall) / spotPrice * 100;
+    items.push({ cls:'ji-red', icon:'▼', text:`<b>Put Wall $${putWall}</b> — 하방 ${putDist.toFixed(1)}%. 대규모 풋 헷지 집중. 이탈 시 낙폭 가속` });
+  }
+  if (callWall) {
+    const callDist = (callWall - spotPrice) / spotPrice * 100;
+    items.push({ cls:'ji-green', icon:'▲', text:`<b>Call Wall $${callWall}</b> — 상방 ${callDist.toFixed(1)}%. 대규모 콜 헷지 집중. 상단 저항` });
+  }
+
+  return items;
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 실시간 상황판단 이벤트 생성
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+function buildLiveJudgment(newSpot, vc, d, ctx, timeStr) {
+  const events = [];
+  const { totalVanna, totalCharm } = vc;
+  const { flipZone, totalGEX, spotPrice: baseSpot } = d;
+  const { marketState, preMarketPct, prevClose, vix: currentVix } = ctx;
+
+  const vixHistory = priceHistory.slice(-5).map(h=>h.vix).filter(Boolean);
+  const vixChange = vixHistory.length >= 2
+    ? (vixHistory[vixHistory.length-1] - vixHistory[0]) / vixHistory[0] * 100
+    : 0;
+
+  const now = new Date();
+  const est = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+  const estHour = est.getHours() + est.getMinutes()/60;
+
+  // 프리마켓 분석
+  if (marketState === 'PRE' && prevClose && preMarketPct != null) {
+    const abs = Math.abs(preMarketPct);
+    if (abs > 0.5) {
+      const dir = preMarketPct > 0 ? '상승' : '하락';
+      const vannaDesc = totalVanna < 0
+        ? `Vanna 음수 구조 — 개장 후 VIX ${preMarketPct>0?'하락':'상승'} 시 ${preMarketPct>0?'매도':'매수'} 압력 가능`
+        : `Vanna 양수 구조 — 개장 후 VIX 흐름 주목`;
+      events.push({ cls: preMarketPct>0?'le-warn':'le-info', msg:`프리마켓 ${dir} ${abs.toFixed(2)}% — 딜러 헷지 ${dir} 방향 진행 중. ${vannaDesc}` });
+    }
+  }
+
+  // VIX 변화 감지
+  if (Math.abs(vixChange) > 1.0 && totalVanna !== 0) {
+    if (vixChange > 0 && totalVanna < 0) {
+      events.push({ cls:'le-danger', msg:`VIX +${vixChange.toFixed(1)}% 상승 — Vanna 음수(${totalVanna.toFixed(0)}M) 활성화. 딜러 매도 압력 강화 중` });
+    } else if (vixChange < 0 && totalVanna > 0) {
+      events.push({ cls:'le-good', msg:`VIX ${vixChange.toFixed(1)}% 하락 — Vanna 양수(${totalVanna.toFixed(0)}M) 활성화. 딜러 매수 지지 강화 중` });
+    } else if (vixChange < 0 && totalVanna < 0) {
+      events.push({ cls:'le-info', msg:`VIX ${vixChange.toFixed(1)}% 하락 — Vanna 음수지만 VIX 하락으로 매도 압력 완화 중` });
+    }
+  }
+
+  // Charm 타이밍
+  if (estHour >= 13 && estHour < 13.1) {
+    const charmMsg = totalCharm < 0 ? '매수 드리프트 시작' : '하락 드리프트 시작';
+    events.push({ cls: totalCharm<0?'le-good':'le-warn', msg:`오후 1시 경과 — Charm(${totalCharm.toFixed(0)}M) ${charmMsg}. 시간 압력이 가격에 반영되기 시작합니다` });
+  }
+
+  if (estHour >= 15 && estHour < 15.1) {
+    events.push({ cls:'le-warn', msg:`마감 1시간 전 — Charm 효과 최대화. 딜러 헷지 청산 물량 주의. 방향성 확대 가능` });
+  }
+
+  // Flip Zone 근접
+  if (flipZone) {
+    const dist = Math.abs(newSpot - flipZone) / newSpot * 100;
+    if (dist < 0.3) {
+      events.push({ cls:'le-danger', msg:`⚡ Flip Zone $${flipZone} 극근접 (${dist.toFixed(2)}%) — 이탈 시 딜러 방향 전환, 하락 가속 가능` });
+    } else if (dist < 0.8) {
+      events.push({ cls:'le-warn', msg:`Flip Zone $${flipZone} 근접 (${dist.toFixed(2)}%) — 이탈 여부 주목` });
+    }
+  }
+
+  // GEX 상태
+  if (totalGEX >= 0) {
+    const localM = d.localGEX / 1e6;
+    if (localM > 2000) {
+      events.push({ cls:'le-info', msg:`Positive GEX 강함 (+${localM.toFixed(0)}M) — 현재 변동성 억제 중. 급등락 가능성 낮음` });
+    }
+  }
+
+  // 기본 메시지
+  if (!events.length) {
+    events.push({ cls:'le-info', msg:`현재가 $${newSpot.toFixed(2)} — 주요 트리거 없음. 구조 유지 중` });
+  }
+
+  return events;
+}
+
+function renderJudgmentPanel(fixedItems, liveEvts, timeStr) {
+  const fixedEl = document.getElementById('judgment-fixed-content');
+  const liveEl = document.getElementById('judgment-live-content');
+  if (!fixedEl || !liveEl) return;
+
+  // 고정 섹션 (최초 1회만 렌더)
+  if (fixedEl.dataset.rendered !== '1') {
+    fixedEl.innerHTML = fixedItems.map(item => `
+      <div class="judgment-item ${item.cls}">
+        <span class="ji-icon">${item.icon}</span>
+        <span class="ji-text">${item.text}</span>
+      </div>
+    `).join('');
+    fixedEl.dataset.rendered = '1';
+  }
+
+  // 실시간 섹션 누적
+  liveEvts.forEach(ev => {
+    liveEvents.unshift({ time: timeStr, cls: ev.cls, msg: ev.msg });
+  });
+  if (liveEvents.length > 15) liveEvents = liveEvents.slice(0, 15);
+
+  liveEl.innerHTML = liveEvents.map(e => `
+    <div class="live-event ${e.cls}">
+      <span class="le-time">${e.time}</span>
+      <span class="le-msg">${e.msg}</span>
+    </div>
+  `).join('') || `<div class="live-event le-info"><span class="le-time">—</span><span class="le-msg">감지 중...</span></div>`;
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 자동갱신
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+
+
+function updateSpotMetric(newSpot, marketState, preMarketPct, prevClose) {
+  const m = document.getElementById('metric-spot'); if (!m) return;
+  if (!currentD) return;
+  const base = (marketState === 'PRE' && prevClose) ? prevClose : currentD.spotPrice;
+  const pct = ((newSpot - base) / base * 100);
+
+  let label = '$' + newSpot.toFixed(1);
+  if (marketState === 'PRE') label = '[PRE] $' + newSpot.toFixed(1);
+  else if (marketState === 'POST') label = '[POST] $' + newSpot.toFixed(1);
+
+  m.querySelector('.val').textContent = label;
+  m.querySelector('.lbl').textContent = `현재가 ${pct>=0?'+':''}${pct.toFixed(2)}%`;
+  m.className = 'metric blue' + (marketState==='PRE'?' pre-market':marketState==='POST'?' post-market':'');
+}
+
+async function loadExpirations() {
+  try {
+    const sym = document.getElementById('sym-select').value;
+    const r = await fetch(`${PROXY}/api/options?symbol=${sym}`);
+    const json = await r.json();
+    spotPrice = json.data.current_price;
+    allOptions = json.data.options;
+    const todayEST = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+    const exps = [...new Set(allOptions.map(o=>{
+      const m=o.option.trim().match(/(\d{6})[CP]/); if(!m) return null;
+      return `20${m[1].slice(0,2)}-${m[1].slice(2,4)}-${m[1].slice(4,6)}`;
+    }).filter(Boolean))].filter(e=>e>=todayEST).sort();
+    const sel = document.getElementById('exp-select');
+    sel.innerHTML = exps.map((e,i)=>`<option value="${e}"${i===0?' selected':''}>${i===0?e+' (0DTE)':e}</option>`).join('');
+    document.getElementById('data-time').textContent = `로드: ${json.timestamp}`;
+  } catch(e){ console.error(e); }
+}
+
+async function loadData() {
+  const sym = document.getElementById('sym-select').value;
+  const exp = document.getElementById('exp-select').value;
+  if (!exp) return;
+  const btn = document.getElementById('load-btn');
+  btn.disabled=true; btn.textContent='⏳ 로딩 중...';
+  setStatus('loading');
+  document.getElementById('main-area').innerHTML=`<div class="card"><div class="empty-state"><div class="spinner"></div><div class="empty-sub">CBOE 데이터 수신 중...</div></div></div>`;
+
+  try {
+    if (!allOptions.length) {
+      const json = await fetch(`${PROXY}/api/options?symbol=${sym}`).then(r=>r.json());
+      spotPrice=json.data.current_price; allOptions=json.data.options;
+    }
+
+    const expKey = exp.replace(/-/g,'').slice(2);
+
+    // 원래 CBOE 최종 방식: 선택한 만기 하나만 파싱
+    const parsed = allOptions.filter(o=>{
+      const m=o.option.trim().match(/(\d{6})[CP]/); return m&&m[1]===expKey;
+    }).map(o=>{
+      const m=o.option.trim().match(/(\d{6})([CP])(\d+)/);
+      return {strike:parseInt(m[3])/1000,type:m[2],iv:o.iv,gamma:o.gamma,delta:o.delta,oi:o.open_interest,volume:o.volume};
+    });
+
+    const map={};
+    parsed.forEach(o=>{
+      if(!map[o.strike])map[o.strike]={strike:o.strike,callOI:0,putOI:0,callGamma:0,putGamma:0,callVol:0,putVol:0,ivSum:0,ivN:0};
+      const s=map[o.strike];
+      if(o.type==='C'){s.callOI+=o.oi;s.callGamma=o.gamma;s.callVol+=o.volume;}
+      else{s.putOI+=o.oi;s.putGamma=o.gamma;s.putVol+=o.volume;}
+      if(o.iv>0){s.ivSum+=o.iv;s.ivN++;}
+    });
+
+    const strikes=Object.values(map).sort((a,b)=>a.strike-b.strike);
+
+    // 만기까지 남은 시간 (년 단위)
+    const msToExp2 = new Date(exp) - new Date();
+    const T2 = Math.max(msToExp2 / (1000*60*60*24*365), 1/365);
+    const r2 = 0.045;
+
+    strikes.forEach(s=>{
+      s.iv=s.ivN>0?s.ivSum/s.ivN:0;
+
+      // CBOE Gamma는 딥OTM에서 신뢰 불가 → BS로 직접 계산
+      const K2 = s.strike;
+      const sigma2 = s.iv > 0 ? s.iv : 0.20;
+      const sqrtT2 = Math.sqrt(T2);
+      const d1_2 = (Math.log(spotPrice/K2) + (r2 + sigma2*sigma2/2)*T2) / (sigma2*sqrtT2);
+      const nd1_2 = Math.exp(-d1_2*d1_2/2) / Math.sqrt(2*Math.PI);
+      const bsGamma = isFinite(nd1_2) ? nd1_2 / (spotPrice * sigma2 * sqrtT2) : 0;
+
+      // 표준 GEX 공식: (callOI - putOI) × Gamma × 100 × spot
+      s.gex = (s.callOI - s.putOI) * bsGamma * 100 * spotPrice;
+      s.callHedge = bsGamma * s.callOI * 100 * spotPrice;
+      s.putHedge  = bsGamma * s.putOI  * 100 * spotPrice;
+    });
+
+    let cum=0,flipZone=null;
+    strikes.forEach(s=>{const p=cum;cum+=s.gex;s.cumGex=cum;if(!flipZone&&((p<0&&cum>=0)||(p>0&&cum<=0)))flipZone=s.strike;});
+
+    const near=strikes.filter(s=>Math.abs(s.strike-spotPrice)/spotPrice<0.10);
+    const putWall=near.reduce((b,s)=>s.putOI>b.putOI?s:b,near[0])?.strike;
+    const callWall=near.reduce((b,s)=>s.callOI>b.callOI?s:b,near[0])?.strike;
+    const localGEX=strikes.filter(s=>Math.abs(s.strike-spotPrice)/spotPrice<0.02).reduce((a,s)=>a+s.gex,0);
+    const totalCallOI=strikes.reduce((a,s)=>a+s.callOI,0);
+    const totalPutOI=strikes.reduce((a,s)=>a+s.putOI,0);
+    const pcr=totalPutOI/Math.max(totalCallOI,1);
+    const totalGEX=cum;
+    const upStrikes=strikes.filter(s=>s.strike>spotPrice&&s.strike<=spotPrice*1.05).sort((a,b)=>b.callHedge-a.callHedge).slice(0,4);
+    const dnStrikes=strikes.filter(s=>s.strike<spotPrice&&s.strike>=spotPrice*0.95).sort((a,b)=>b.putHedge-a.putHedge).slice(0,4);
+
+    currentStrikes=strikes; priceHistory=[]; liveEvents=[];
+    // vcHistory는 0DTE 탭 데이터이므로 날짜탭에서 초기화하지 않음
+    prevSpot=spotPrice;
+    const d={strikes,spotPrice,flipZone,putWall,callWall,localGEX,totalGEX,pcr,exp,sym,upStrikes,dnStrikes};
+    currentD=d;
+    render(d);
+
+    setStatus('live');
+  } catch(e){
+    console.error(e); setStatus('error');
+    document.getElementById('main-area').innerHTML=`<div class="card"><div class="empty-state"><div class="empty-title">로드 실패</div><div class="empty-sub">${e.message}</div></div></div>`;
+  } finally{btn.disabled=false;btn.textContent='⬇ 데이터 로드';}
+}
+
+function jlScroll(dir) {
+  const el = document.getElementById('judgment-live-scroll');
+  if (el) el.scrollBy({ top: dir * 72, behavior: 'smooth' });
+}
+
+function setStatus(s){
+  const dot=document.getElementById('status-dot'),txt=document.getElementById('status-text');
+  if(s==='loading'){dot.className='status-dot';txt.textContent='로딩 중...';}
+  else if(s==='live'){dot.className='status-dot live';txt.textContent='로드 완료';}
+  else if(s==='updating'){dot.className='status-dot updating';txt.textContent='갱신 중...';}
+  else{dot.className='status-dot';txt.textContent='오류';}
+}
+
+function render(d){
+  const{strikes,spotPrice,flipZone,putWall,callWall,localGEX,totalGEX,pcr,exp,sym,upStrikes,dnStrikes}=d;
+  const regime=totalGEX>=0?'positive':'negative';
+  const vc = calculateVannaCharm(strikes, spotPrice, exp);
+
+  const alarms=[];
+  const flipDist=flipZone?Math.abs(spotPrice-flipZone)/spotPrice*100:null;
+  const putDist=putWall?(spotPrice-putWall)/spotPrice*100:null;
+  if(!flipZone) alarms.push({l:'red',m:`GEX 전 구간 ${regime==='negative'?'음수':'양수'} — Flip Zone 없음`});
+  else if(flipDist<0.5) alarms.push({l:'red',m:`Flip Zone ($${flipZone}) 극근접 ${flipDist.toFixed(2)}% — 방향 전환 임박`});
+  else if(flipDist<1.5) alarms.push({l:'yellow',m:`Flip Zone ($${flipZone}) 근접 ${flipDist.toFixed(2)}%`});
+  if(putDist!==null&&putDist<1) alarms.push({l:'red',m:`Put Wall ($${putWall}) 직하방 — 이탈 시 낙폭 가속`});
+  alarms.push(localGEX<0?{l:'red',m:`로컬 GEX ${(localGEX/1e6).toFixed(1)}M — 딜러 추세 증폭`}:{l:'green',m:`로컬 GEX +${(localGEX/1e6).toFixed(1)}M — 딜러 변동성 억제`});
+  if(pcr>1.5) alarms.push({l:'red',m:`PCR ${pcr.toFixed(2)} — 풋 편중 심화`});
+  else if(pcr<0.7) alarms.push({l:'yellow',m:`PCR ${pcr.toFixed(2)} — 콜 편중`});
+
+  const maxUp=Math.max(...upStrikes.map(s=>s.callHedge),1);
+  const maxDn=Math.max(...dnStrikes.map(s=>s.putHedge),1);
+  const rankCls=i=>['r1','r2','r3','r4'][i]||'r4';
+  const upRows=upStrikes.map((s,i)=>{
+    const dist=((s.strike-spotPrice)/spotPrice*100).toFixed(2);
+    const pct=Math.round(s.callHedge/maxUp*100);
+    return `<div class="hedge-row"><span class="hedge-rank ${rankCls(i)}">${i+1}</span><span class="hedge-strike">$${s.strike}</span><span class="hedge-dist">+${dist}%</span><div class="hedge-bar-wrap"><div class="hedge-bar up" style="width:${pct}%"></div></div><span class="hedge-pressure">${(s.callHedge/1e6).toFixed(1)}M</span></div>`;
+  }).join('');
+  const dnRows=dnStrikes.map((s,i)=>{
+    const dist=((spotPrice-s.strike)/spotPrice*100).toFixed(2);
+    const pct=Math.round(s.putHedge/maxDn*100);
+    return `<div class="hedge-row"><span class="hedge-rank ${rankCls(i)}">${i+1}</span><span class="hedge-strike">$${s.strike}</span><span class="hedge-dist">-${dist}%</span><div class="hedge-bar-wrap"><div class="hedge-bar dn" style="width:${pct}%"></div></div><span class="hedge-pressure">${(s.putHedge/1e6).toFixed(1)}M</span></div>`;
+  }).join('');
+
+  const chartData=strikes.filter(s=>Math.abs(s.strike-spotPrice)/spotPrice<0.08);
+  const tableData=strikes.filter(s=>Math.abs(s.strike-spotPrice)/spotPrice<0.10);
+  const vixDisplay = vixVal ? vixVal.toFixed(2) : '—';
+  const vvixDisplay = vvixVal ? vvixVal.toFixed(2) : '—';
+  const vixCls = vixVal ? (vixVal>30?'danger':vixVal>20?'warn':'') : '';
+  const vvixCls = vvixVal ? (vvixVal>130?'danger':vvixVal>110?'warn':'') : '';
+
+  const fixedItems = buildFixedJudgment(d, vc);
+
+  document.getElementById('main-area').innerHTML=`
+  <div class="card">
+    <div class="card-title">${sym} · 만기 ${exp} · 종가 기준 $${spotPrice.toFixed(2)}</div>
+    <div class="regime-bar ${regime}">${regime==='positive'?'✚ Positive GEX — 딜러 변동성 억제 (피닝)':'▼ Negative GEX — 딜러 추세 증폭'}</div>
+    <div id="alarm-list"></div>
+    <div class="metrics">
+      <div class="metric blue" id="metric-spot"><div class="val">$${spotPrice.toFixed(1)}</div><div class="lbl">현재가</div></div>
+      <div class="metric ${flipZone?'orange':''}"><div class="val">${flipZone?'$'+flipZone:'없음'}</div><div class="lbl">Flip Zone</div></div>
+      <div class="metric ${pcr>1.5?'red':pcr<0.7?'yellow':''}"><div class="val">${pcr.toFixed(2)}</div><div class="lbl">Put/Call</div></div>
+      <div class="metric red"><div class="val">${putWall?'$'+putWall:'—'}</div><div class="lbl">Put Wall</div></div>
+      <div class="metric green"><div class="val">${callWall?'$'+callWall:'—'}</div><div class="lbl">Call Wall</div></div>
+      <div class="metric ${localGEX<0?'red':'green'}"><div class="val">${(localGEX/1e6).toFixed(1)}M</div><div class="lbl">Local GEX</div></div>
+      <div class="metric ${vixVal&&vixVal>30?'danger':vixVal&&vixVal>20?'warn':'yellow'}" id="metric-vix"><div class="val">${vixDisplay}</div><div class="lbl">VIX</div></div>
+      <div class="metric ${vvixVal&&vvixVal>130?'danger':vvixVal&&vvixVal>110?'warn':'yellow'}" id="metric-vvix"><div class="val">${vvixDisplay}</div><div class="lbl">VVIX</div></div>
+      <div class="metric" id="metric-vanna" style="border-color:#bc8cff55"><div class="val" style="color:#bc8cff">${vc.totalVanna.toFixed(1)}M</div><div class="lbl" style="color:#bc8cff">● Vanna Exp</div></div>
+      <div class="metric" id="metric-charm" style="border-color:#58a6ff55"><div class="val" style="color:#58a6ff">${vc.totalCharm.toFixed(1)}M</div><div class="lbl" style="color:#58a6ff">● Charm · VC ${Math.abs(vc.totalVanna)>0?(Math.abs(vc.totalCharm)/Math.abs(vc.totalVanna)).toFixed(2):'—'}</div></div>
+    </div>
+
+
+
+    <div class="hedge-section">
+      <div class="hedge-title">딜러 헷지 부담 집중 스트라이크 (γ × OI 기준)</div>
+      <div class="hedge-grid">
+        <div><div class="hedge-col-label" style="color:var(--green)">▲ 상승 — 콜 헷지 Top4</div>${upRows||'<div style="color:var(--text3);font-size:13px;padding:8px">데이터 없음</div>'}</div>
+        <div><div class="hedge-col-label" style="color:var(--red)">▼ 하락 — 풋 헷지 Top4</div>${dnRows||'<div style="color:var(--text3);font-size:13px;padding:8px">데이터 없음</div>'}</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Greek 힘의 균형 메트릭 카드 + VannaCharm 차트 -->
+  <div class="vc-panel-wrap" style="flex-direction:column">
+    <!-- Greek 메트릭 카드 행 -->
+    <div id="greek-metrics-row" style="display:flex;gap:10px;flex-wrap:wrap;padding:14px 20px 0;border-bottom:1px solid var(--border)">
+      <div class="greek-metric-card" id="gmc-vanna">
+        <div class="gmc-header">
+          <span class="gmc-dot" style="background:#bc8cff"></span>
+          <span class="gmc-name">Vanna</span>
+          <span class="gmc-signal" id="gmc-vanna-signal">—</span>
+        </div>
+        <div class="gmc-value" id="gmc-vanna-val">—</div>
+        <div class="gmc-desc" id="gmc-vanna-desc">자동갱신 후 표시</div>
+      </div>
+      <div class="greek-metric-card" id="gmc-charm">
+        <div class="gmc-header">
+          <span class="gmc-dot" style="background:#58a6ff"></span>
+          <span class="gmc-name">Charm</span>
+          <span class="gmc-signal" id="gmc-charm-signal">—</span>
+        </div>
+        <div class="gmc-value" id="gmc-charm-val">—</div>
+        <div class="gmc-desc" id="gmc-charm-desc">자동갱신 후 표시</div>
+      </div>
+      <div class="greek-metric-card" id="gmc-gex">
+        <div class="gmc-header">
+          <span class="gmc-dot" style="background:#3fb950"></span>
+          <span class="gmc-name">GEX</span>
+          <span class="gmc-signal" id="gmc-gex-signal">—</span>
+        </div>
+        <div class="gmc-value" id="gmc-gex-val">—</div>
+        <div class="gmc-desc" id="gmc-gex-desc">자동갱신 후 표시</div>
+      </div>
+      <div class="greek-metric-card" style="flex:1;min-width:160px" id="gmc-dominant">
+        <div class="gmc-header">
+          <span class="gmc-name" style="color:var(--text2)">◈ 지배 Greek</span>
+        </div>
+        <div class="gmc-value" id="gmc-dominant-val" style="font-size:13px">—</div>
+        <div class="gmc-desc" id="gmc-flip-desc">—</div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="card">
+    <div class="card-title">OI 분포 + GEX</div>
+    <div class="chart-controls">
+      <span class="zoom-label">확대</span>
+      <input type="range" class="zoom-slider" id="zoom-slider" min="1" max="6" step="0.5" value="1" oninput="updateZoom(this.value)">
+      <span class="zoom-val" id="zoom-val">1×</span>
+      <span class="scroll-hint">← 가로 스크롤 →</span>
+    </div>
+    <div class="chart-scroll-wrap" id="chart-scroll-wrap-date">
+      <div class="chart-inner" id="chart-inner-date"><canvas id="mainchart-date"></canvas></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">스트라이크별 상세 — 현재가 ±10%</div>
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>Strike</th><th>Call OI</th><th>Put OI</th><th>GEX(M)</th><th>Call Vol</th><th>Put Vol</th><th>IV</th></tr></thead>
+      <tbody id="tbl-body-date"></tbody>
+    </table></div>
+  </div>`;
+
+  // 알람
+  const al=document.getElementById('alarm-list');
+  (alarms.length?alarms:[{l:'green',m:'특이 리스크 없음'}]).forEach(a=>{
+    const div=document.createElement('div'); div.className=`alarm ${a.l}`; div.textContent=a.m; al.appendChild(div);
+  });
+
+  // 고정 섹션 초기 렌더
+
+
+  // 차트 — DOM 렌더링 완료 후 실행
+  requestAnimationFrame(() => {
+    buildChart(chartData, spotPrice, flipZone, putWall, callWall, '-date');
+  });
+
+  // 테이블
+  const tbody=document.getElementById('tbl-body-date');
+  tableData.forEach(s=>{
+    const isCur=Math.abs(s.strike-spotPrice)<0.5;
+    const isFlip=s.strike===flipZone,isPW=s.strike===putWall,isCW=s.strike===callWall;
+    const tr=document.createElement('tr');
+    if(isCur)tr.className='cur'; else if(isFlip)tr.className='flip';
+    let tags='';
+    if(isCur)tags+=`<span class="tag tag-cur">현재가</span>`;
+    if(isFlip)tags+=`<span class="tag tag-flip">Flip</span>`;
+    if(isPW)tags+=`<span class="tag tag-pw">Put Wall</span>`;
+    if(isCW)tags+=`<span class="tag tag-cw">Call Wall</span>`;
+    const gc=s.gex>=0?'#3fb950':'#f85149';
+    tr.innerHTML=`<td>$${s.strike}${tags}</td><td>${s.callOI.toLocaleString()}</td><td>${s.putOI.toLocaleString()}</td><td style="color:${gc};font-weight:600">${s.gex>=0?'+':''}${(s.gex/1e6).toFixed(2)}</td><td>${s.callVol.toLocaleString()}</td><td>${s.putVol.toLocaleString()}</td><td>${s.iv>0?(s.iv*100).toFixed(1)+'%':'—'}</td>`;
+    tbody.appendChild(tr);
+  });
+
+  // VannaCharm 차트: autoRefresh() 완료 후 자동 렌더 (vcHistory 빈 상태에서 호출 불필요)
+  renderVCChart(); // 대기 메시지 표시용
+}
+
+function buildChart(chartData, sp, flipZone, putWall, callWall, sfx) {
+  const _isDate = (sfx === '-date');
+  // 탭별 인스턴스 독립 관리 — 한 탭의 destroy가 다른 탭에 영향 없음
+  if (_isDate) { if (chartInstDate){chartInstDate.destroy();chartInstDate=null;} }
+  else          { if (chartInst){chartInst.destroy();chartInst=null;} }
+
+  const wrap=document.getElementById('chart-scroll-wrap'+(sfx||''));
+  const inner=document.getElementById('chart-inner'+(sfx||''));
+  if (!wrap || !inner) { console.warn('[buildChart] wrap/inner 없음', sfx); return; }
+  const baseW=wrap.clientWidth||window.innerWidth-56;
+  inner.style.width=Math.max(baseW, baseW*zoomLevel)+'px';
+
+  const canvas = document.getElementById('mainchart'+(sfx||''));
+  if (!canvas) { console.warn('[buildChart] canvas 없음: mainchart'+(sfx||'')); return; }
+  const _chartInst=new Chart(canvas,{
+    data:{
+      labels:chartData.map(s=>s.strike%5===0?'$'+s.strike:''),
+      datasets:[
+        {type:'bar',label:'Call OI',data:chartData.map(s=>s.callOI),backgroundColor:'rgba(88,166,255,.4)',yAxisID:'y'},
+        {type:'bar',label:'Put OI',data:chartData.map(s=>-s.putOI),backgroundColor:'rgba(248,81,73,.4)',yAxisID:'y'},
+        {type:'line',label:'GEX(M)',data:chartData.map(s=>+(s.gex/1e6).toFixed(3)),
+         borderColor:'#f0883e',backgroundColor:'transparent',
+         pointRadius:3,pointBackgroundColor:'#f0883e',
+         pointHoverBackgroundColor:'#f85149',pointHoverRadius:7,pointHoverBorderColor:'#fff',pointHoverBorderWidth:1.5,
+         borderWidth:2.5,tension:.3,yAxisID:'y2'},
+      ]
+    },
+    options:{
+      responsive:true,maintainAspectRatio:false,
+      interaction:{mode:'index',intersect:false},
+      onHover:(e,els)=>{ const _ci=_isDate?chartInstDate:chartInst; if(_ci) _ci._hoveredIdx = els.length ? els[0].index : null; },
+      plugins:{
+        legend:{display:true,position:'top',align:'start',labels:{color:'#8b949e',font:{size:12},boxWidth:12,padding:16}},
+        tooltip:{
+          backgroundColor:'#161b22',borderColor:'#30363d',borderWidth:1,
+          titleColor:'#e6edf3',bodyColor:'#8b949e',padding:12,
+          callbacks:{
+            title:items=>'$'+chartData[items[0].dataIndex]?.strike,
+            afterBody:items=>{
+              const s=chartData[items[0].dataIndex]; if(!s) return [];
+              const lines=[];
+              if(s.iv>0) lines.push(`IV: ${(s.iv*100).toFixed(1)}%`);
+              if(s.strike===flipZone) lines.push('⚡ Flip Zone');
+              if(s.strike===putWall) lines.push('🔴 Put Wall');
+              if(s.strike===callWall) lines.push('🟢 Call Wall');
+              return lines;
+            }
+          }
+        },
+      },
+      scales:{
+        x:{ticks:{color:'#6e7681',font:{size:11},autoSkip:false,maxRotation:45},grid:{color:'rgba(48,54,61,.7)'}},
+        y:{
+          position:'left',
+          ticks:{
+            color:'#6e7681',font:{size:11},
+            callback: v => {
+              const abs = Math.abs(v);
+              const sign = v < 0 ? '-' : '';
+              if (abs >= 1000000) return sign + Math.round(abs/1000000) + 'M';
+              if (abs >= 1000) return sign + Math.round(abs/1000) + 'K';
+              return v;
+            }
+          },
+          grid:{color:'rgba(48,54,61,.7)'},
+          afterDataLimits(scale) {
+            const range = scale.max - scale.min;
+            const pad = range === 0 ? (Math.abs(scale.max)*0.2||100) : range * 0.12;
+            scale.min -= pad;
+            scale.max += pad;
+          }
+        },
+        y2:{
+          position:'right',
+          ticks:{
+            color:'#f0883e',font:{size:11},
+            callback: v => {
+              const abs = Math.abs(v);
+              const sign = v < 0 ? '-' : '';
+              if (abs >= 1000) return sign + Math.round(abs/1000) + 'K';
+              return v + 'M';
+            }
+          },
+          grid:{
+            drawOnChartArea:true,
+            color: ctx => ctx.tick.value === 0 ? 'rgba(255,255,255,0.25)' : 'transparent',
+            lineWidth: ctx => ctx.tick.value === 0 ? 1 : 0,
+          },
+          afterDataLimits(scale) {
+            const range = scale.max - scale.min;
+            const pad = range === 0 ? 1 : range * 0.12;
+            scale.min -= pad;
+            scale.max += pad;
+          }
+        },
+      }
+    },
+    plugins:[{
+      // ── 현재가 세로 점선 ──
+      id: 'spotLine',
+      afterDraw(chart) {
+        const spotIdx = chartData.findIndex(s => Math.abs(s.strike - sp) < 0.5);
+        if (spotIdx < 0) return;
+        const { ctx, chartArea } = chart;
+        const x = chart.scales.x.getPixelForValue(spotIdx);
+        ctx.save();
+        ctx.strokeStyle = '#58a6ff';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([5, 4]);
+        ctx.beginPath();
+        ctx.moveTo(x, chartArea.top);
+        ctx.lineTo(x, chartArea.bottom);
+        ctx.stroke();
+        // 상단 라벨
+        ctx.setLineDash([]);
+        ctx.fillStyle = '#58a6ff';
+        ctx.font = 'bold 11px monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'bottom';
+        ctx.fillText('$' + sp.toFixed(0), x, chartArea.top - 2);
+        ctx.restore();
+      }
+    },{
+      // ── 호버 시 GEX 라인 붉은 점 ──
+      id: 'hoverDot',
+      afterDraw(chart) {
+        const idx = chart._hoveredIdx;
+        if (idx == null) return;
+        const ds = chart.data.datasets[2]; // GEX 라인
+        const meta = chart.getDatasetMeta(2);
+        if (!meta?.data[idx]) return;
+        const pt = meta.data[idx];
+        const ctx = chart.ctx;
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(pt.x, pt.y, 6, 0, Math.PI*2);
+        ctx.fillStyle = '#f85149';
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 1.5;
+        ctx.fill();
+        ctx.stroke();
+        ctx.restore();
+      }
+    },{
+      // ── OI GEX 차트 y축 스크롤 고정 플러그인 ──
+      id: 'mainStickyY',
+      afterDraw(chart) {
+        const wrap = document.getElementById('chart-scroll-wrap');
+        if (!wrap) return;
+        const yScale = chart.scales['y'];
+        const y2Scale = chart.scales['y2'];
+        if (!yScale) return;
+        const scrollX = wrap.scrollLeft;
+        const wrapW = wrap.clientWidth;
+        const { ctx, chartArea, height, width } = chart;
+
+        ctx.save();
+
+        // ── 왼쪽 y축 고정 (스크롤 시만) ──
+        if (scrollX > 0) {
+          const axisW = yScale.right;
+          ctx.fillStyle = '#161b22';
+          ctx.fillRect(scrollX, 0, axisW, height);
+          ctx.textAlign = 'right';
+          ctx.textBaseline = 'middle';
+          ctx.fillStyle = '#6e7681';
+          ctx.font = '11px monospace';
+          yScale.ticks.forEach((tick, i) => {
+            const y = yScale.getPixelForTick(i);
+            const abs = Math.abs(tick.value);
+            const sign = tick.value < 0 ? '-' : '';
+            let label = abs >= 1000000 ? sign+Math.round(abs/1e6)+'M'
+                      : abs >= 1000    ? sign+Math.round(abs/1000)+'K'
+                      : String(tick.value);
+            ctx.fillText(label, scrollX + axisW - 4, y);
+          });
+          ctx.strokeStyle = '#30363d';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(scrollX + axisW, chartArea.top);
+          ctx.lineTo(scrollX + axisW, chartArea.bottom);
+          ctx.stroke();
+        }
+
+        // ── 오른쪽 y2축 고정 (확대/스크롤 모두 항상 표시) ──
+        if (y2Scale && (scrollX > 0 || wrapW < width)) {
+          const rAxisStart = y2Scale.left;
+          const rAxisW = width - rAxisStart;
+          const fixedRX = scrollX + wrapW - rAxisW;
+          ctx.fillStyle = '#161b22';
+          ctx.fillRect(fixedRX, 0, rAxisW, height);
+          ctx.textAlign = 'left';
+          ctx.textBaseline = 'middle';
+          ctx.fillStyle = '#f0883e';
+          ctx.font = '11px monospace';
+          y2Scale.ticks.forEach((tick, i) => {
+            const y = y2Scale.getPixelForTick(i);
+            const abs = Math.abs(tick.value);
+            const sign = tick.value < 0 ? '-' : '';
+            const label = abs >= 1000 ? sign+Math.round(abs/1000)+'K' : tick.value+'M';
+            ctx.fillText(label, fixedRX + 4, y);
+          });
+          ctx.strokeStyle = '#30363d';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(fixedRX, chartArea.top);
+          ctx.lineTo(fixedRX, chartArea.bottom);
+          ctx.stroke();
+        }
+
+        ctx.restore();
+      }
+    }]
+  });
+
+  // 스크롤 시 y축 재드로우
+  const mainWrap = document.getElementById('chart-scroll-wrap'+(sfx||''));
+  if (mainWrap) {
+    mainWrap._scrollHandler && mainWrap.removeEventListener('scroll', mainWrap._scrollHandler);
+    mainWrap._scrollHandler = () => {
+      if (_isDate) { if(chartInstDate) chartInstDate.draw(); }
+      else          { if(chartInst) chartInst.draw(); }
+    };
+    mainWrap.addEventListener('scroll', mainWrap._scrollHandler, { passive: true });
+  }
+  // 인스턴스 저장
+  if (_isDate) chartInstDate = _chartInst;
+  else chartInst = _chartInst;
+}
+
+// chart instance 저장 헬퍼
+function _saveChartInst(inst, isDate) {
+  if (isDate) chartInstDate = inst;
+  else chartInst = inst;
+}
+
+function updateZoom(val){
+  zoomLevel=parseFloat(val);
+  const isDateTab = document.getElementById('area-date')?.style.display !== 'none';
+  const zsfx = isDateTab ? '-date' : '';
+  const zv = document.getElementById('zoom-val' + zsfx);
+  if(zv) zv.textContent = val+'×';
+  if(!currentD) return;
+  const chartData=currentStrikes.filter(s=>Math.abs(s.strike-currentD.spotPrice)/currentD.spotPrice<0.08);
+  buildChart(chartData,currentD.spotPrice,currentD.flipZone,currentD.putWall,currentD.callWall, zsfx);
+}
+</script>
+</body>
+</html>
