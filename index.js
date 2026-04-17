@@ -31,6 +31,9 @@ const state = {
   },
   vixHistory: [], vixHistoryDate: '',
   greeks: {}, strikes: {},
+  prevStrikes: {},   // 직전 Cron strikes (15분 전)
+  baseStrikes: {},   // 당일 첫 번째 Cron strikes (누적 기준)
+  baseDate:    '',   // 날짜 바뀌면 baseStrikes 리셋
   vcHistory: {}, vcHistoryDate: '',
 };
 
@@ -338,6 +341,37 @@ async function cronGreeks() {
       const cboeJson = await fetchCBOEChain(sym);
       const result   = computeGreeks(cboeJson);
       state.greeks[sym]  = result;
+
+      // ── OI 증감 계산
+      const today = todayEST();
+      // baseStrikes: 당일 첫 Cron 기준 (날짜 바뀌면 리셋)
+      if (state.baseDate !== today) {
+        state.baseStrikes = {};
+        state.baseDate    = today;
+      }
+      const prevMap = {};
+      const baseMap = {};
+      if (state.prevStrikes[sym]) {
+        for (const s of state.prevStrikes[sym]) prevMap[s.strike] = s;
+      }
+      if (state.baseStrikes[sym]) {
+        for (const s of state.baseStrikes[sym]) baseMap[s.strike] = s;
+      }
+      for (const s of result.strikes) {
+        const prev = prevMap[s.strike];
+        const base = baseMap[s.strike];
+        s.callOIDiff15 = prev ? s.callOI - prev.callOI : 0;
+        s.putOIDiff15  = prev ? s.putOI  - prev.putOI  : 0;
+        s.callOIDiffCum = base ? s.callOI - base.callOI : 0;
+        s.putOIDiffCum  = base ? s.putOI  - base.putOI  : 0;
+      }
+      // prevStrikes 갱신 (다음 Cron의 15분 전 기준)
+      state.prevStrikes[sym] = result.strikes.map(s => ({ strike: s.strike, callOI: s.callOI, putOI: s.putOI }));
+      // baseStrikes: 당일 첫 번째 Cron만 저장
+      if (!state.baseStrikes[sym]) {
+        state.baseStrikes[sym] = result.strikes.map(s => ({ strike: s.strike, callOI: s.callOI, putOI: s.putOI }));
+      }
+
       state.strikes[sym] = result.strikes;
       if (isExtendedHours()) {
         if (!state.vcHistory[sym]) state.vcHistory[sym] = [];
