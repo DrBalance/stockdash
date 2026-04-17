@@ -1111,7 +1111,8 @@ function render0DTE(d0, newSpot, marketState, preMarketPct, prevClose, timeStr) 
   // Greek 힘의 균형
   const force = calcForceBalance(vc, currentD, vixVal, vvixVal);
   renderForceSidebar(force);
-  requestAnimationFrame(() => renderVCChart());
+  // DOM innerHTML 교체 후 브라우저 렌더가 완료될 때까지 대기 (double-rAF)
+  requestAnimationFrame(() => requestAnimationFrame(() => renderVCChart()));
 }
 
 function jlScroll0(dir) {
@@ -1710,9 +1711,15 @@ function destroyVCPanes() {
   if (vcPaneVC)  { try { vcPaneVC.destroy(); }  catch(_){} vcPaneVC  = null; }
   if (vcPaneVV)  { try { vcPaneVV.destroy(); }  catch(_){} vcPaneVV  = null; }
   if (vcPaneOBV) { try { vcPaneOBV.destroy(); } catch(_){} vcPaneOBV = null; }
+  // innerHTML 교체 대신 canvas 자체를 재생성 — 즉시 DOM에 반영됨
   [['vc-pane-vc','vc-pane-vc-wrap'],['vc-pane-vv','vc-pane-vv-wrap'],['vc-pane-obv','vc-pane-obv-wrap']].forEach(([canvasId, wrapId]) => {
     const wrapEl = document.getElementById(wrapId);
-    if (wrapEl) wrapEl.innerHTML = `<canvas id="${canvasId}"></canvas>`;
+    if (!wrapEl) return;
+    const old = wrapEl.querySelector('canvas');
+    if (old) wrapEl.removeChild(old);
+    const newCanvas = document.createElement('canvas');
+    newCanvas.id = canvasId;
+    wrapEl.appendChild(newCanvas);
   });
 }
 
@@ -1726,12 +1733,19 @@ function renderVCChart() {
   if (vcHistory.length === 0) {
     const bar = document.getElementById('vc-signal-bar');
     if (bar) {
-      document.getElementById('vc-signal-icon').textContent = '—';
+      document.getElementById('vc-signal-icon') && (document.getElementById('vc-signal-icon').textContent = '—');
       document.getElementById('vc-signal-text').textContent = '데이터 누적 중... (KST 17:00(EDT)/18:00(EST) 프리마켓부터 5분 Cron 자동 적재)';
       document.getElementById('vc-signal-text').style.color = 'var(--text3)';
     }
     return;
   }
+
+  // 데이터 검증 로그
+  const nonNullVanna = vcHistory.filter(h => h.vanna != null).length;
+  const nonNullCharm = vcHistory.filter(h => h.charm != null).length;
+  const nonNullVold  = vcHistory.filter(h => h.vold  != null).length;
+  console.log(`[renderVCChart] vcHistory=${vcHistory.length} | vanna=${nonNullVanna} charm=${nonNullCharm} vold=${nonNullVold}`);
+  console.log('[renderVCChart] 최신 5개:', vcHistory.slice(-5).map(h => ({ vanna: h.vanna, charm: h.charm, vold: h.vold, iso: h.iso })));
 
   // ── 전체 고정 시간축 (UTC ISO 기준으로 생성, 표시는 toKST 변환) ──
   // 프리마켓 시작: EST 04:00 = UTC 09:00 (EDT) 또는 UTC 08:00 (EST)
