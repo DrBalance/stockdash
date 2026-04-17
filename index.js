@@ -9,6 +9,11 @@ import cors from 'cors';
 import http from 'http';
 import { WebSocket, WebSocketServer } from 'ws';
 import cron from 'node-cron';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname  = path.dirname(__filename);
 
 const PORT           = process.env.PORT || 3000;
 const FINNHUB_TOKEN  = process.env.FINNHUB_TOKEN;
@@ -37,6 +42,8 @@ const server = http.createServer(app);
 const wss    = new WebSocketServer({ server });
 
 app.use(cors());
+app.use(express.static(path.join(__dirname)));
+app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 app.use(express.json());
 
 function broadcast(type, data) {
