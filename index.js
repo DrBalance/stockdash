@@ -79,13 +79,21 @@ function nowEST() {
 }
 function todayEST() { return nowEST().toLocaleDateString('en-CA'); }
 function estHour()  { const n = nowEST(); return n.getHours() + n.getMinutes() / 60; }
-function isMarketHours() {
-  const h = estHour(), dow = nowEST().getDay();
-  return dow >= 1 && dow <= 5 && h >= 9.5 && h < 16;
-}
 function isExtendedHours() {
   const h = estHour(), dow = nowEST().getDay();
   return dow >= 1 && dow <= 5 && h >= 4 && h < 20;
+}
+
+// 장 상태 판별 — 서버에서 한 번만 계산, prices WS로 전달
+// 클라이언트는 이 값을 그대로 사용 (타임존 판단 중복 방지)
+// 'AFTER' 통일 (Yahoo의 'POST'와 다름에 주의)
+function getMarketState() {
+  const h = estHour(), dow = nowEST().getDay();
+  if (dow === 0 || dow === 6)    return 'CLOSED';   // 주말
+  if (h >= 4   && h <  9.5)     return 'PRE';      // 프리장
+  if (h >= 9.5 && h <  16)      return 'REGULAR';  // 정규장
+  if (h >= 16  && h <  20)      return 'AFTER';    // 애프터장
+  return 'CLOSED';
 }
 function normPDF(x) { return Math.exp(-x * x / 2) / Math.sqrt(2 * Math.PI); }
 
@@ -121,11 +129,12 @@ function connectFinnhub() {
         const prev = state.prices[sym];
         state.prices[sym] = {
           price,
-          prevClose: prev?.prevClose ?? null,
+          prevClose:   prev?.prevClose ?? null,
           change: prev?.prevClose != null
             ? +((price - prev.prevClose) / prev.prevClose * 100).toFixed(2)
             : null,
-          updatedAt: new Date().toISOString(),
+          marketState: getMarketState(),  // 'PRE' | 'REGULAR' | 'AFTER' | 'CLOSED'
+          updatedAt:   new Date().toISOString(),
         };
         updated[sym] = state.prices[sym];
       }
@@ -196,15 +205,23 @@ async function cronMarket() {
   catch (e) { console.warn('[Cron] VVIX 실패:', e.message); }
 
   let uvolNow = null, dvolNow = null, voldNow = null;
-  if (isMarketHours()) {
-    try { uvolNow = await fetchYahooQuote('C:UVOL'); console.log('[Cron] UVOL:', uvolNow); }
-    catch (e) { console.warn('[Cron] UVOL 실패:', e.message); }
-    try { dvolNow = await fetchYahooQuote('C:DVOL'); console.log('[Cron] DVOL:', dvolNow); }
-    catch (e) { console.warn('[Cron] DVOL 실패:', e.message); }
-    if (uvolNow != null && dvolNow != null) {
-      voldNow = uvolNow - dvolNow;
-      console.log('[Cron] VOLD:', voldNow);
+  const ms = getMarketState();
+
+  try { uvolNow = await fetchYahooQuote('C:UVOL'); console.log('[Cron] UVOL:', uvolNow); }
+  catch (e) { console.warn('[Cron] UVOL 실패:', e.message); }
+  try { dvolNow = await fetchYahooQuote('C:DVOL'); console.log('[Cron] DVOL:', dvolNow); }
+  catch (e) { console.warn('[Cron] DVOL 실패:', e.message); }
+
+  if (uvolNow != null && dvolNow != null) {
+    const calculated = uvolNow - dvolNow;
+    if (ms === 'PRE') {
+      voldNow = 0;                                                    // 프리장: 초기화
+    } else if (ms === 'REGULAR') {
+      voldNow = calculated;                                           // 장중: 실시간
+    } else {
+      voldNow = calculated !== 0 ? calculated : state.market.vold;   // AFTER/CLOSED: 0이면 이전값 유지
     }
+    console.log('[Cron] VOLD:', voldNow, '(' + ms + ')');
   }
 
   let vv = null;

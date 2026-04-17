@@ -73,7 +73,7 @@ select,button{font-family:var(--font);font-size:14px}
 .metric.orange .val{color:var(--orange)}.metric.purple .val{color:var(--purple)}
 .metric.warn .val{color:var(--yellow)}.metric.danger .val{color:var(--red)}
 .metric.pre-market{border-color:rgba(188,140,255,.5)}
-.metric.post-market{border-color:rgba(240,136,62,.5)}
+.metric.after-market{border-color:rgba(240,136,62,.5)}
 
 .hedge-section{margin-top:20px}
 .hedge-title{font-size:12px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px}
@@ -787,7 +787,7 @@ async function load0DTE() {
     }
 
     const newSpot = priceJson.price || d0.spotPrice;
-    const marketState = priceJson.marketState || 'REGULAR';
+    const marketState = window._marketState || priceJson.marketState || 'REGULAR';
     const preMarketPct = priceJson.preMarketChangePercent;
     const prevClose    = priceJson.prevClose;
 
@@ -907,7 +907,9 @@ function render0DTE(d0, newSpot, marketState, preMarketPct, prevClose, timeStr) 
   const tableData   = strikes.filter(s => Math.abs(s.strike - spotPrice) / spotPrice < 0.10);
 
   const spotDisplay = newSpot ? newSpot.toFixed(1) : spotPrice.toFixed(1);
-  const stateLabel  = { PRE:'프리마켓', REGULAR:'정규장', POST:'애프터', CLOSED:'마감' }[marketState] || marketState;
+  const stateLabel  = { PRE:'프리마켓', REGULAR:'정규장', AFTER:'애프터마켓', CLOSED:'마감' }[marketState] || marketState;
+  const stateShort  = { PRE:'프리', REGULAR:'정규', AFTER:'애프터', CLOSED:'마감' }[marketState] || marketState;
+  const stateCls    = { PRE:'pre-market', REGULAR:'', AFTER:'after-market', CLOSED:'' }[marketState] || '';
   const pctBase = (marketState === 'PRE' && prevClose) ? prevClose : spotPrice;
   const pct     = newSpot ? ((newSpot - pctBase) / pctBase * 100) : 0;
   const pctStr  = `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%`;
@@ -918,7 +920,7 @@ function render0DTE(d0, newSpot, marketState, preMarketPct, prevClose, timeStr) 
     <div class="regime-bar ${regime}">${regime==='positive'?'✚ Positive GEX — 딜러 변동성 억제 (피닝)':'▼ Negative GEX — 딜러 추세 증폭'}</div>
     <div id="alarm-list-0dte"></div>
     <div class="metrics">
-      <div class="metric blue" id="metric-spot-0dte"><div class="val">[${stateLabel.slice(0,2)}] $${spotDisplay}</div><div class="lbl">현재가 ${pctStr}</div></div>
+      <div class="metric blue ${stateCls}" id="metric-spot-0dte"><div class="val">[${stateShort}] $${spotDisplay}</div><div class="lbl">${stateLabel} ${pctStr}</div></div>
       <div class="metric ${flipZone?'orange':''}"><div class="val">${flipZone?'$'+flipZone:'없음'}</div><div class="lbl">Flip Zone</div></div>
       <div class="metric ${pcr>1.5?'red':pcr<0.7?'yellow':''}"><div class="val">${pcr.toFixed(2)}</div><div class="lbl">Put/Call</div></div>
       <div class="metric red"><div class="val">${putWall?'$'+putWall:'—'}</div><div class="lbl">Put Wall</div></div>
@@ -1275,20 +1277,28 @@ function onWSPrices(prices) {
   if (!d || d.price == null) return;
 
   const newSpot = d.price;
+  // 장 상태는 1초 시계(startClock)에서 관리 — 여기서는 읽기만
+  const state = window._marketState || 'REGULAR';
+  const LABELS = { PRE:'프리마켓', REGULAR:'정규장', AFTER:'애프터마켓', CLOSED:'마감' };
+
   window._lastPriceJson = {
-    price: newSpot,
-    prevClose: d.prevClose,
-    prevChange: d.change,
-    marketState: 'REGULAR',
+    price:       newSpot,
+    prevClose:   d.prevClose,
+    prevChange:  d.change,
+    marketState: state,
   };
+
+  const SHORT = { PRE:'프리', REGULAR:'정규', AFTER:'애프터', CLOSED:'마감' };
+  const CLS   = { PRE:'pre-market', REGULAR:'', AFTER:'after-market', CLOSED:'' };
 
   // 현재가 메트릭 카드 업데이트
   const spotEl = document.getElementById('metric-spot-0dte');
   if (spotEl && newSpot) {
     const pctStr = d.change != null ? ` ${d.change > 0 ? '+' : ''}${d.change.toFixed(2)}%` : '';
-    spotEl.querySelector('.val').textContent = `$${newSpot.toFixed(2)}`;
-    spotEl.querySelector('.lbl').textContent = `현재가${pctStr}`;
-    spotEl.className = 'metric ' + (d.change > 0 ? 'green' : d.change < 0 ? 'red' : '');
+    spotEl.querySelector('.val').textContent = `[${SHORT[state]||state}] $${newSpot.toFixed(2)}`;
+    spotEl.querySelector('.lbl').textContent = `${LABELS[state]||state}${pctStr}`;
+    const colorCls = d.change > 0 ? ' green' : d.change < 0 ? ' red' : '';
+    spotEl.className = 'metric blue' + (CLS[state] ? ' '+CLS[state] : '') + colorCls;
   }
 
   // OI차트 현재가 수직선만 별도 업데이트 (차트 전체 재렌더 없이)
@@ -2417,13 +2427,14 @@ function updateSpotMetric(newSpot, marketState, preMarketPct, prevClose) {
   const base = (marketState === 'PRE' && prevClose) ? prevClose : currentD.spotPrice;
   const pct = ((newSpot - base) / base * 100);
 
-  let label = '$' + newSpot.toFixed(1);
-  if (marketState === 'PRE') label = '[PRE] $' + newSpot.toFixed(1);
-  else if (marketState === 'POST') label = '[POST] $' + newSpot.toFixed(1);
+  const SLABELS = { PRE:'프리마켓', REGULAR:'정규장', AFTER:'애프터마켓', CLOSED:'마감' };
+  const SSHORT  = { PRE:'프리', REGULAR:'정규', AFTER:'애프터', CLOSED:'마감' };
+  const SCLS    = { PRE:'pre-market', REGULAR:'', AFTER:'after-market', CLOSED:'' };
+  const label = `[${SSHORT[marketState]||marketState}] $${newSpot.toFixed(1)}`;
 
   m.querySelector('.val').textContent = label;
-  m.querySelector('.lbl').textContent = `현재가 ${pct>=0?'+':''}${pct.toFixed(2)}%`;
-  m.className = 'metric blue' + (marketState==='PRE'?' pre-market':marketState==='POST'?' post-market':'');
+  m.querySelector('.lbl').textContent = `${SLABELS[marketState]||marketState} ${pct>=0?'+':''}${pct.toFixed(2)}%`;
+  m.className = 'metric blue' + (SCLS[marketState] ? ' ' + SCLS[marketState] : '');
 }
 
 async function loadExpirations() {
