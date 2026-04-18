@@ -1361,7 +1361,7 @@ async function fetchClosedQuotes(sym) {
   console.log('[ClosedQuotes] 완료 — 현재가:', window._lastPriceJson?.price, 'VIX:', vixVal);
 }
 
-
+window.addEventListener('DOMContentLoaded', async () => {
   startClock(); // 가장 먼저 — window._marketState 초기화
   load0DTE();
   if (window._marketState !== 'CLOSED') {
