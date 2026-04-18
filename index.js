@@ -75,6 +75,7 @@ async function fetchClosedMarketData() {
       const changePct  = meta.regularMarketChangePercent != null
         ? +meta.regularMarketChangePercent.toFixed(2)
         : (prevClose ? +((price - prevClose) / prevClose * 100).toFixed(2) : null);
+      console.log(`[ClosedData] ${sym} price=${price} prevClose=${prevClose} changePct=${changePct} regularMarketChangePercent=${meta.regularMarketChangePercent}`);
       if (!state.prices[sym]) state.prices[sym] = {};
       state.prices[sym] = {
         price,
