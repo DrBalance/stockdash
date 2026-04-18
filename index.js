@@ -419,17 +419,26 @@ function computeGreeks(cboeJson) {
   }
   const strikes = Object.values(map).sort((a, b) => a.strike - b.strike);
 
-  const msToExp = new Date(targetISO) - new Date();
-  const T = Math.max(msToExp / (1000 * 60 * 60 * 24 * 365), 1 / 365);
-  const safeT = Math.max(T, 0.5 / 365);
+  // 만기일 16:00 ET(장 마감) 기준으로 T 계산
+  // 4~10월(EDT) → UTC+4 = UTC 20:00 / 11~3월(EST) → UTC+5 = UTC 21:00
+  function getExpiryCloseUTC(iso) {
+    const [y, m, d] = iso.split('-').map(Number);
+    const utcHour = (m >= 4 && m <= 10) ? 20 : 21; // EDT vs EST
+    return new Date(Date.UTC(y, m - 1, d, utcHour, 0, 0));
+  }
+  const expiryClose = getExpiryCloseUTC(targetISO);
+  const msToExp = expiryClose - new Date();
+  // 장중: 남은 시간 기준 / 장 마감 후: 최솟값 0DTE 처리 (1시간 = 1/8760)
+  const T = msToExp > 0
+    ? msToExp / (1000 * 60 * 60 * 24 * 365)
+    : 1 / 8760;
+  const sqrtT  = Math.sqrt(T);
   const r_rate = 0.045;
   let totalVanna = 0, totalCharm = 0;
 
   for (const s of strikes) {
     s.iv = s.ivN > 0 ? s.ivSum / s.ivN : 0;
     const sigma = s.iv > 0 ? s.iv : 0.20;
-    const sqrtT = Math.sqrt(T);
-    const safeSqrtT = Math.sqrt(safeT);
     const d1 = (Math.log(spotPrice / s.strike) + (r_rate + sigma * sigma / 2) * T) / (sigma * sqrtT);
     const d2 = d1 - sigma * sqrtT;
     const nd1 = normPDF(d1);
@@ -440,7 +449,8 @@ function computeGreeks(cboeJson) {
     const netOI = s.callOI - s.putOI;
     const vanna = nd1 * (d2 / sigma) * netOI * 100 * spotPrice;
     totalVanna += isFinite(vanna) ? vanna : 0;
-    const charm = -nd1 * (r_rate / (sigma * safeSqrtT) - d2 / (2 * safeT)) * netOI * 100;
+    // Charm: safeT 혼용 제거 — T로 통일
+    const charm = -nd1 * (r_rate / (sigma * sqrtT) - d2 / (2 * T)) * netOI * 100;
     totalCharm += isFinite(charm) ? charm : 0;
   }
 
