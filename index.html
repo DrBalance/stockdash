@@ -65,7 +65,7 @@ select,button{font-family:var(--font);font-size:14px}
 .metrics{display:grid;grid-template-columns:repeat(10,1fr);gap:10px;margin-top:16px}
 @media(max-width:1400px){.metrics{grid-template-columns:repeat(5,1fr)}}
 @media(max-width:700px){.metrics{grid-template-columns:repeat(2,1fr)}}
-.metric{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:14px 12px;text-align:center;transition:border-color .3s}
+.metric{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:14px 12px;text-align:center;transition:border-color .3s;display:flex;flex-direction:column;align-items:center;justify-content:center}
 .metric .val{font-size:20px;font-weight:700;color:var(--text);margin-bottom:4px;font-family:var(--mono)}
 .metric .lbl{font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em}
 .metric.red .val{color:var(--red)}.metric.green .val{color:var(--green)}
@@ -927,8 +927,8 @@ function render0DTE(d0, newSpot, marketState, preMarketPct, prevClose, timeStr) 
   const stateShort  = { PRE:'프리', REGULAR:'정규', AFTER:'애프터', CLOSED:'마감' }[marketState] || marketState;
   const stateCls    = { PRE:'pre-market', REGULAR:'', AFTER:'after-market', CLOSED:'' }[marketState] || '';
   const badgeCls    = { PRE:'pre', REGULAR:'regular', AFTER:'after', CLOSED:'closed' }[marketState] || 'closed';
-  const pctBase = (marketState === 'PRE' && prevClose) ? prevClose : spotPrice;
-  const pct     = newSpot ? ((newSpot - pctBase) / pctBase * 100) : 0;
+  const pctBase = prevClose ?? spotPrice;
+  const pct     = (newSpot && pctBase) ? ((newSpot - pctBase) / pctBase * 100) : 0;
   const pctStr  = `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%`;
 
   document.getElementById('main-area-0dte').innerHTML = `
@@ -1450,8 +1450,14 @@ function onWSMarket(data) {
   }
 
   window._lastVixJson = {
-    VIX:  { price: data.vix,  pctChange: null },
-    VVIX: { price: data.vvix, pctChange: null },
+    VIX:  {
+      price: data.vix,
+      pctChange: data.vixChangePct ?? null,
+    },
+    VVIX: {
+      price: data.vvix,
+      pctChange: data.vvixChangePct ?? null,
+    },
   };
   window._lastMarket = data;
 

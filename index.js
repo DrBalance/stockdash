@@ -86,12 +86,18 @@ async function fetchClosedMarketData() {
 
   // VIX / VVIX — Yahoo 1회 fetch
   try {
-    const vix = await fetchYahooQuote('^VIX');
-    if (vix != null) state.market.vix = parseFloat(vix.toFixed(2));
+    const q = await fetchYahooQuote('^VIX');
+    if (q.price != null) {
+      state.market.vix = parseFloat(q.price.toFixed(2));
+      state.market.vixChangePct = q.changePct;
+    }
   } catch (e) { console.warn('[ClosedData] VIX 실패:', e.message); }
   try {
-    const vvix = await fetchYahooQuote('^VVIX');
-    if (vvix != null) state.market.vvix = parseFloat(vvix.toFixed(2));
+    const q = await fetchYahooQuote('^VVIX');
+    if (q.price != null) {
+      state.market.vvix = parseFloat(q.price.toFixed(2));
+      state.market.vvixChangePct = q.changePct;
+    }
   } catch (e) { console.warn('[ClosedData] VVIX 실패:', e.message); }
 
   // VOLD — null (마감 후 의미 없음)
@@ -277,7 +283,13 @@ async function fetchYahooQuote(symbol) {
   const j = await r.json();
   const meta = j?.chart?.result?.[0]?.meta;
   if (!meta) throw new Error('Yahoo ' + symbol + ' no meta');
-  return meta.regularMarketPrice ?? meta.regularMarketVolume ?? null;
+  const price      = meta.regularMarketPrice ?? null;
+  const prevClose  = meta.chartPreviousClose ?? null;
+  const volume     = meta.regularMarketVolume ?? null;
+  const changePct  = (price != null && prevClose != null && prevClose !== 0)
+    ? +((price - prevClose) / prevClose * 100).toFixed(2)
+    : null;
+  return { price, prevClose, changePct, volume };
 }
 
 async function cronMarket() {
@@ -285,21 +297,27 @@ async function cronMarket() {
   const today = todayEST();
   const nowIso = new Date().toISOString();
 
-  let vixNow = null;
-  try { vixNow = await fetchYahooQuote('^VIX'); console.log('[Cron] VIX:', vixNow); }
-  catch (e) { console.warn('[Cron] VIX 실패:', e.message); }
+  let vixNow = null, vixChangePct = null;
+  try {
+    const q = await fetchYahooQuote('^VIX');
+    vixNow = q.price; vixChangePct = q.changePct;
+    console.log('[Cron] VIX:', vixNow, '(' + vixChangePct + '%)');
+  } catch (e) { console.warn('[Cron] VIX 실패:', e.message); }
 
-  let vvixNow = null;
-  try { vvixNow = await fetchYahooQuote('^VVIX'); console.log('[Cron] VVIX:', vvixNow); }
-  catch (e) { console.warn('[Cron] VVIX 실패:', e.message); }
+  let vvixNow = null, vvixChangePct = null;
+  try {
+    const q = await fetchYahooQuote('^VVIX');
+    vvixNow = q.price; vvixChangePct = q.changePct;
+    console.log('[Cron] VVIX:', vvixNow, '(' + vvixChangePct + '%)');
+  } catch (e) { console.warn('[Cron] VVIX 실패:', e.message); }
 
   let uvolNow = null, dvolNow = null, voldNow = null;
 
   // CLOSED 시: VOLD는 null(—) 처리, VIX는 이전값 유지
   if (ms !== 'CLOSED') {
-    try { uvolNow = await fetchYahooQuote('C:UVOL'); console.log('[Cron] UVOL:', uvolNow); }
+    try { const q = await fetchYahooQuote('C:UVOL'); uvolNow = q.volume ?? q.price; console.log('[Cron] UVOL:', uvolNow); }
     catch (e) { console.warn('[Cron] UVOL 실패:', e.message); }
-    try { dvolNow = await fetchYahooQuote('C:DVOL'); console.log('[Cron] DVOL:', dvolNow); }
+    try { const q = await fetchYahooQuote('C:DVOL'); dvolNow = q.volume ?? q.price; console.log('[Cron] DVOL:', dvolNow); }
     catch (e) { console.warn('[Cron] DVOL 실패:', e.message); }
 
     if (uvolNow != null && dvolNow != null) {
@@ -328,12 +346,14 @@ async function cronMarket() {
   }
 
   state.market = {
-    vix:       vixNow  != null ? parseFloat(vixNow.toFixed(2))  : state.market.vix,
-    vvix:      vvixNow != null ? parseFloat(vvixNow.toFixed(2)) : state.market.vvix,
-    vv:        vv      != null ? vv                             : state.market.vv,
-    vold:      ms === 'CLOSED' ? null : (voldNow != null ? Math.round(voldNow) : state.market.vold),
-    uvol:      uvolNow != null ? Math.round(uvolNow) : state.market.uvol,
-    dvol:      dvolNow != null ? Math.round(dvolNow) : state.market.dvol,
+    vix:          vixNow  != null ? parseFloat(vixNow.toFixed(2))  : state.market.vix,
+    vixChangePct: vixChangePct  != null ? vixChangePct  : state.market.vixChangePct,
+    vvix:         vvixNow != null ? parseFloat(vvixNow.toFixed(2)) : state.market.vvix,
+    vvixChangePct:vvixChangePct != null ? vvixChangePct : state.market.vvixChangePct,
+    vv:           vv      != null ? vv                             : state.market.vv,
+    vold:         ms === 'CLOSED' ? null : (voldNow != null ? Math.round(voldNow) : state.market.vold),
+    uvol:         uvolNow != null ? Math.round(uvolNow) : state.market.uvol,
+    dvol:         dvolNow != null ? Math.round(dvolNow) : state.market.dvol,
     marketState:    ms,
     nextTradingDay: ms === 'CLOSED' ? getNextTradingDay() : null,
     updatedAt: nowIso,
