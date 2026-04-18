@@ -13,7 +13,6 @@
     "ws": "^8.16.0",
     "node-cron": "^3.0.3",
     "node-fetch": "^3.3.2",
-    "yahoo-finance2": "^2.11.3"
   },
   "engines": {
     "node": ">=18.0.0"
