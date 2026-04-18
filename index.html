@@ -65,7 +65,7 @@ select,button{font-family:var(--font);font-size:14px}
 .metrics{display:grid;grid-template-columns:repeat(10,1fr);gap:10px;margin-top:16px}
 @media(max-width:1400px){.metrics{grid-template-columns:repeat(5,1fr)}}
 @media(max-width:700px){.metrics{grid-template-columns:repeat(2,1fr)}}
-.metric{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:14px 12px;text-align:center;transition:border-color .3s;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.metric{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:14px 12px;text-align:center;transition:border-color .3s}
 .metric .val{font-size:20px;font-weight:700;color:var(--text);margin-bottom:4px;font-family:var(--mono)}
 .metric .lbl{font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em}
 .metric.red .val{color:var(--red)}.metric.green .val{color:var(--green)}
@@ -78,7 +78,7 @@ select,button{font-family:var(--font);font-size:14px}
 .spot-state-badge.regular{background:#3fb950;color:#0d1117}
 .spot-state-badge.pre    {background:#d29922;color:#0d1117}
 .spot-state-badge.after  {background:#f0883e;color:#0d1117}
-.spot-state-badge.closed {background:rgba(110,118,129,.2);color:var(--text2)}
+.spot-state-badge.closed {background:#d0d5da;color:#0d1117}
 .spot-state-badge::before{content:'';width:5px;height:5px;border-radius:50%;background:#0d1117;opacity:.5}
 
 .hedge-section{margin-top:20px}
@@ -926,6 +926,7 @@ function render0DTE(d0, newSpot, marketState, preMarketPct, prevClose, timeStr) 
   const stateLabel  = { PRE:'프리마켓', REGULAR:'정규장', AFTER:'애프터마켓', CLOSED:'마감' }[marketState] || marketState;
   const stateShort  = { PRE:'프리', REGULAR:'정규', AFTER:'애프터', CLOSED:'마감' }[marketState] || marketState;
   const stateCls    = { PRE:'pre-market', REGULAR:'', AFTER:'after-market', CLOSED:'' }[marketState] || '';
+  const badgeCls    = { PRE:'pre', REGULAR:'regular', AFTER:'after', CLOSED:'closed' }[marketState] || 'closed';
   const pctBase = (marketState === 'PRE' && prevClose) ? prevClose : spotPrice;
   const pct     = newSpot ? ((newSpot - pctBase) / pctBase * 100) : 0;
   const pctStr  = `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%`;
@@ -937,7 +938,7 @@ function render0DTE(d0, newSpot, marketState, preMarketPct, prevClose, timeStr) 
     <div id="alarm-list-0dte"></div>
     <div class="metrics">
       <div class="metric blue ${stateCls}" id="metric-spot-0dte" style="display:flex;flex-direction:column;align-items:center;justify-content:center">
-        <div class="spot-state-badge ${stateCls||'regular'}">${stateLabel}</div>
+        <div class="spot-state-badge ${badgeCls}">${stateLabel}</div>
         <div class="val">$${spotDisplay}</div>
         <div class="lbl">${pctStr}</div>
       </div>
@@ -1244,14 +1245,13 @@ const MARKET_STATE_STYLE = {
 
 function getMarketStateClient() {
   const now = new Date();
-  const etStr = now.toLocaleString('en-US', {
+  const fmt = new Intl.DateTimeFormat('en-US', {
     timeZone: 'America/New_York', hour12: false,
     weekday: 'short', hour: '2-digit', minute: '2-digit'
-  });
-  const parts = etStr.split(' ');
-  const dow = parts[0];
-  const [hh, mm] = parts[1].split(':').map(Number);
-  const h = hh + mm / 60;
+  }).formatToParts(now);
+  const get = type => +fmt.find(p => p.type === type).value;
+  const dow = fmt.find(p => p.type === 'weekday').value;
+  const h   = get('hour') + get('minute') / 60;
   if (dow === 'Sat' || dow === 'Sun') return 'CLOSED';
   if (h >= 4   && h <  9.5)          return 'PRE';
   if (h >= 9.5 && h <  16)           return 'REGULAR';
@@ -1287,7 +1287,7 @@ function startClock() {
       console.log('[Clock] 장 상태 변경:', newState);
     }
   }
-  tick();
+  tick(); // 즉시 1회 실행
   setInterval(tick, 1000);
 }
 
