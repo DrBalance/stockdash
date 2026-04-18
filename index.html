@@ -788,13 +788,7 @@ async function load0DTE() {
 
     if (d0.error) throw new Error(d0.error);
 
-    // CLOSED 시: Yahoo에서 직접 현재가/VIX/VVIX 1회 fetch
-    const marketState = window._marketState || 'REGULAR';
-    if (marketState === 'CLOSED') {
-      await fetchClosedQuotes(sym);
-    }
-
-    // 현재가/VIX는 WS 또는 fetchClosedQuotes에서 관리 — 캐시값 사용
+    // 현재가/VIX는 WS에서 관리 — 캐시값 사용
     const priceJson  = window._lastPriceJson || {};
     const newSpot    = priceJson.price || d0.spotPrice;
     const preMarketPct = priceJson.preMarketChangePercent;
@@ -1287,9 +1281,6 @@ function startClock() {
           auto0DTEInterval = setInterval(load0DTE, 60000);
         }
         connectWS();
-        // 상황판단 메시지 초기화
-        const liveEl = document.getElementById('judgment-live-content-0dte');
-        if (liveEl) liveEl.innerHTML = `<div class="live-event le-good"><span class="le-time">—</span><span class="le-msg">프리마켓 시작 — 실시간 업데이트 중</span></div>`;
       }
     }
   }
@@ -1298,47 +1289,109 @@ function startClock() {
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// CLOSED 시 서버 REST API에서 현재가/VIX/VVIX 1회 fetch
+// CLOSED 전용 프로시저 — WS 없이 1회성 조회로 화면 구성
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-async function fetchClosedQuotes(sym) {
-  // 현재가 — 서버 /api/quotes 경유 (서버가 Yahoo fetch)
-  try {
-    const r = await fetch(`${PROXY}/api/quotes`);
-    const quotes = await r.json();
-    const d = quotes[sym];
-    if (d?.price != null) {
-      window._lastPriceJson = {
-        price:       d.price,
-        prevClose:   d.prevClose,
-        prevChange:  d.change,
-        marketState: 'CLOSED',
-      };
-    }
-  } catch (e) { console.warn('[ClosedQuotes] 현재가 실패:', e.message); }
+async function loadClosed() {
+  const sym = document.getElementById('sym-select-0dte')?.value || 'SPY';
+  setStatus('updating');
 
-  // VIX/VVIX — 서버 /api/market 경유
   try {
-    const r = await fetch(`${PROXY}/api/market`);
-    const m = await r.json();
-    if (m.vix != null) {
-      vixVal = m.vix;
+    // 1. 현재가/등락률 — 서버 /api/quotes (서버가 Yahoo fetch)
+    let price = null, change = null;
+    try {
+      const r = await fetch(`${PROXY}/api/quotes`);
+      const quotes = await r.json();
+      const d = quotes[sym];
+      if (d?.price != null) {
+        price  = d.price;
+        change = d.change;
+      }
+    } catch (e) { console.warn('[loadClosed] 현재가 실패:', e.message); }
+
+    // 2. VIX/VVIX — 서버 /api/market (서버가 Yahoo fetch)
+    try {
+      const r = await fetch(`${PROXY}/api/market`);
+      const m = await r.json();
+      if (m.vix  != null) vixVal  = m.vix;
+      if (m.vvix != null) vvixVal = m.vvix;
       window._lastVixJson = {
         VIX:  { price: m.vix,  pctChange: m.vixChangePct  ?? null },
         VVIX: { price: m.vvix, pctChange: m.vvixChangePct ?? null },
       };
-    }
-    if (m.vvix != null) vvixVal = m.vvix;
-  } catch (e) { console.warn('[ClosedQuotes] VIX 실패:', e.message); }
+    } catch (e) { console.warn('[loadClosed] VIX 실패:', e.message); }
 
-  // VOLD — 마감 후 의미 없음
-  window._lastVold = null;
-  console.log('[ClosedQuotes] 완료 — 현재가:', window._lastPriceJson?.price, 'VIX:', vixVal);
+    // 3. 다음 거래일 옵션 데이터 — 서버 /api/gex0dte (CBOE)
+    const r = await fetch(`${PROXY}/api/gex0dte?symbol=${sym}`);
+    const d0 = await r.json();
+    if (d0.error) throw new Error(d0.error);
+
+    // 4. 화면 렌더링
+    const spotDisplay = price ? price.toFixed(1) : (d0.spotPrice?.toFixed(1) ?? '—');
+    const pctStr      = change != null ? `${change >= 0 ? '+' : ''}${change.toFixed(2)}%` : '—';
+    const vixDisplay  = vixVal  ? vixVal.toFixed(2)  : '—';
+    const exp         = d0.exp ?? '—';
+    const nextDay     = d0.exp ?? '다음 거래일';
+    const flipZone    = d0.flipZone;
+    const putWall     = d0.putWall;
+    const callWall    = d0.callWall;
+    const localGEX    = (d0.localGEX ?? 0) * 1e6;
+    const pcr         = d0.pcr ?? 0;
+    const regime      = (d0.totalGEX ?? 0) >= 0 ? 'positive' : 'negative';
+    const vixPct      = window._lastVixJson?.VIX?.pctChange;
+
+    document.getElementById('main-area-0dte').innerHTML = `
+    <div class="card">
+      <div class="card-title">${sym} · 0DTE ${exp} · 마감 · 서버계산(CRON)</div>
+      <div class="regime-bar ${regime}">${regime==='positive'?'✚ Positive GEX — 딜러 변동성 억제 (피닝)':'▼ Negative GEX — 딜러 추세 증폭'}</div>
+      <div id="alarm-list-0dte"></div>
+      <div class="metrics">
+        <div class="metric blue" id="metric-spot-0dte">
+          <div class="spot-state-badge closed">마감</div>
+          <div class="val">$${spotDisplay}</div>
+          <div class="lbl">${pctStr}</div>
+        </div>
+        <div class="metric ${flipZone?'orange':''}"><div class="val">${flipZone?'$'+flipZone:'없음'}</div><div class="lbl">Flip Zone</div></div>
+        <div class="metric ${pcr>1.5?'red':pcr<0.7?'yellow':''}"><div class="val">${pcr.toFixed(2)}</div><div class="lbl">Put/Call</div></div>
+        <div class="metric red"><div class="val">${putWall?'$'+putWall:'—'}</div><div class="lbl">Put Wall</div></div>
+        <div class="metric green"><div class="val">${callWall?'$'+callWall:'—'}</div><div class="lbl">Call Wall</div></div>
+        <div class="metric ${localGEX<0?'red':'green'}"><div class="val">${(localGEX/1e6).toFixed(1)}M</div><div class="lbl">Local GEX</div></div>
+        <div class="metric ${vixVal&&vixVal>30?'danger':vixVal&&vixVal>20?'warn':'yellow'}" id="metric-vix">
+          <div class="val">${vixDisplay}${vixPct!=null?`<span style="font-size:12px;opacity:.75;margin-left:3px">(${vixPct>0?'+':''}${vixPct.toFixed(1)}%)</span>`:''}</div>
+          <div class="lbl">VIX</div>
+        </div>
+        <div class="metric"><div class="val" style="font-size:16px">—</div><div class="lbl">VOLD</div></div>
+        <div class="metric" style="border-color:#bc8cff55"><div class="val" style="color:#bc8cff">${d0.vanna?.toFixed(1) ?? '—'}M</div><div class="lbl" style="color:#bc8cff">● Vanna Exp</div></div>
+        <div class="metric" style="border-color:#58a6ff55"><div class="val" style="color:#58a6ff">${d0.charm?.toFixed(1) ?? '—'}M</div><div class="lbl" style="color:#58a6ff">● Charm · VC ${Math.abs(d0.vanna??0)>0?(Math.abs(d0.charm??0)/Math.abs(d0.vanna)).toFixed(2):'—'}</div></div>
+      </div>
+      <div class="judgment-panel" style="margin-top:20px">
+        <div class="judgment-live">
+          <div class="judgment-live-header">
+            <div class="judgment-live-title"><div class="live-dot" style="background:var(--text3)"></div>실시간 상황 판단</div>
+          </div>
+          <div class="judgment-live-scroll">
+            <div id="judgment-live-content-0dte">
+              <div class="live-event le-info"><span class="le-time">—</span><span class="le-msg">장 마감 — ${nextDay} 데이터입니다. ET 04:00 프리마켓 시작 시 실시간으로 전환됩니다.</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>`;
+
+    setStatus('live');
+  } catch (e) {
+    console.error('[loadClosed] 실패:', e.message);
+    document.getElementById('main-area-0dte').innerHTML =
+      `<div class="empty-state">로드 실패<br><small>${e.message}</small></div>`;
+    setStatus('error');
+  }
 }
 
 window.addEventListener('DOMContentLoaded', async () => {
   startClock(); // 가장 먼저 — window._marketState 초기화
-  load0DTE();
-  if (window._marketState !== 'CLOSED') {
+  if (window._marketState === 'CLOSED') {
+    loadClosed(); // CLOSED 전용 — WS 없음, 자동갱신 없음
+  } else {
+    load0DTE();
     auto0DTEInterval = setInterval(load0DTE, 60000);
     connectWS();
   }
