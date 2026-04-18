@@ -72,8 +72,14 @@ select,button{font-family:var(--font);font-size:14px}
 .metric.yellow .val{color:var(--yellow)}.metric.blue .val{color:var(--blue)}
 .metric.orange .val{color:var(--orange)}.metric.purple .val{color:var(--purple)}
 .metric.warn .val{color:var(--yellow)}.metric.danger .val{color:var(--red)}
-.metric.pre-market{border-color:rgba(188,140,255,.5)}
-.metric.after-market{border-color:rgba(240,136,62,.5)}
+.metric.pre-market{border-color:rgba(210,153,34,.6)}
+.metric.after-market{border-color:rgba(240,136,62,.6)}
+.spot-state-badge{display:inline-flex;align-items:center;gap:5px;border-radius:99px;padding:2px 10px;font-size:11px;font-weight:700;margin-bottom:6px}
+.spot-state-badge.regular{background:#3fb950;color:#0d1117}
+.spot-state-badge.pre    {background:#d29922;color:#0d1117}
+.spot-state-badge.after  {background:#f0883e;color:#0d1117}
+.spot-state-badge.closed {background:rgba(110,118,129,.2);color:var(--text2)}
+.spot-state-badge::before{content:'';width:5px;height:5px;border-radius:50%;background:#0d1117;opacity:.5}
 
 .hedge-section{margin-top:20px}
 .hedge-title{font-size:12px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px}
@@ -225,22 +231,7 @@ tr.flip td{background:rgba(240,136,62,.06)}
   <div style="display:flex;align-items:center;gap:10px">
     <div style="font-size:11px;color:var(--text3);font-family:var(--mono);background:var(--bg3);padding:2px 7px;border-radius:4px;border:1px solid var(--border)">v8.0 · <span style="color:#3fb950">Railway · WS</span></div>
     <div style="font-size:12px;color:var(--text3);font-family:var(--mono)" id="ws-status-text">연결 중...</div>
-    <!-- ── ET/KST 이중 시계 + 장 상태 뱃지 ── -->
-    <div style="display:flex;flex-direction:column;align-items:flex-end;gap:2px">
-      <div style="display:flex;align-items:center;gap:6px">
-        <div id="market-state-badge" style="display:inline-flex;align-items:center;
-             gap:4px;border-radius:99px;padding:1px 8px;font-size:10px;font-weight:600;
-             background:rgba(63,185,80,.12);color:#3fb950">
-          <span id="market-state-dot" style="width:5px;height:5px;border-radius:50%;
-                display:inline-block;background:#3fb950"></span>
-          <span id="market-state-label">정규장</span>
-        </div>
-        <div style="font-size:12px;color:var(--text2);font-family:var(--mono)"
-             id="clock-et">— ET</div>
-      </div>
-      <div style="font-size:11px;color:var(--text3);font-family:var(--mono);
-                  text-align:right" id="clock-kst">— KST</div>
-    </div>
+    <div class="data-time" id="data-time"></div>
     <a href="/admin.html"
       style="color:var(--text3);text-decoration:none;font-size:12px;
              padding:4px 10px;border:1px solid var(--border);border-radius:5px;
@@ -935,7 +926,11 @@ function render0DTE(d0, newSpot, marketState, preMarketPct, prevClose, timeStr) 
     <div class="regime-bar ${regime}">${regime==='positive'?'✚ Positive GEX — 딜러 변동성 억제 (피닝)':'▼ Negative GEX — 딜러 추세 증폭'}</div>
     <div id="alarm-list-0dte"></div>
     <div class="metrics">
-      <div class="metric blue ${stateCls}" id="metric-spot-0dte"><div class="val">[${stateShort}] $${spotDisplay}</div><div class="lbl">${stateLabel} ${pctStr}</div></div>
+      <div class="metric blue ${stateCls}" id="metric-spot-0dte" style="display:flex;flex-direction:column;align-items:center;justify-content:center">
+        <div class="spot-state-badge ${stateCls||'regular'}">${stateLabel}</div>
+        <div class="val">$${spotDisplay}</div>
+        <div class="lbl">${pctStr}</div>
+      </div>
       <div class="metric ${flipZone?'orange':''}"><div class="val">${flipZone?'$'+flipZone:'없음'}</div><div class="lbl">Flip Zone</div></div>
       <div class="metric ${pcr>1.5?'red':pcr<0.7?'yellow':''}"><div class="val">${pcr.toFixed(2)}</div><div class="lbl">Put/Call</div></div>
       <div class="metric red"><div class="val">${putWall?'$'+putWall:'—'}</div><div class="lbl">Put Wall</div></div>
@@ -1227,75 +1222,7 @@ function isEDT() {
   return etStr.includes('EDT');
 }
 
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// 헤더 시계 + 장 상태 관리
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-const MARKET_STATE_STYLE = {
-  REGULAR: { label:'정규장',     dot:'#3fb950', bg:'rgba(63,185,80,.12)',   color:'#3fb950' },
-  PRE:     { label:'프리마켓',   dot:'#d29922', bg:'rgba(210,153,34,.12)',  color:'#d29922' },
-  AFTER:   { label:'애프터마켓', dot:'#f0883e', bg:'rgba(240,136,62,.12)',  color:'#f0883e' },
-  CLOSED:  { label:'마감',       dot:'#6e7681', bg:'rgba(110,118,129,.12)', color:'#6e7681' },
-};
-
-function getMarketStateClient() {
-  const now = new Date();
-  const etStr = now.toLocaleString('en-US', {
-    timeZone: 'America/New_York',
-    hour12: false,
-    weekday: 'short',
-    hour: '2-digit',
-    minute: '2-digit'
-  });
-  // "Mon 09:30" 형태
-  const parts = etStr.split(' ');
-  const dow = parts[0]; // Mon, Tue, ... Sun
-  const [hh, mm] = parts[1].split(':').map(Number);
-  const h = hh + mm / 60;
-  if (dow === 'Sat' || dow === 'Sun') return 'CLOSED';
-  if (h >= 4   && h <  9.5)          return 'PRE';
-  if (h >= 9.5 && h <  16)           return 'REGULAR';
-  if (h >= 16  && h <  20)           return 'AFTER';
-  return 'CLOSED';
-}
-
-function updateMarketStateBadge(state) {
-  const s = MARKET_STATE_STYLE[state] || MARKET_STATE_STYLE.CLOSED;
-  const badge = document.getElementById('market-state-badge');
-  const dot   = document.getElementById('market-state-dot');
-  const label = document.getElementById('market-state-label');
-  if (badge) { badge.style.background = s.bg; badge.style.color = s.color; }
-  if (dot)   { dot.style.background = s.dot; }
-  if (label) { label.textContent = s.label; }
-}
-
-function startClock() {
-  function tick() {
-    const now = new Date();
-    const etEl  = document.getElementById('clock-et');
-    const kstEl = document.getElementById('clock-kst');
-    if (etEl)  etEl.textContent  = now.toLocaleTimeString('en-GB', {
-      hour:'2-digit', minute:'2-digit', second:'2-digit',
-      timeZone:'America/New_York'
-    }) + ' ET';
-    if (kstEl) kstEl.textContent = now.toLocaleTimeString('en-GB', {
-      hour:'2-digit', minute:'2-digit', second:'2-digit',
-      timeZone:'Asia/Seoul'
-    }) + ' KST';
-
-    const newState = getMarketStateClient();
-    if (newState !== window._marketState) {
-      window._marketState = newState;
-      updateMarketStateBadge(newState);
-      console.log('[Clock] 장 상태 변경:', newState);
-    }
-  }
-  tick(); // 즉시 1회 실행
-  setInterval(tick, 1000);
-}
-
 window.addEventListener('DOMContentLoaded', async () => {
-  startClock(); // 시계 시작 — 가장 먼저 (window._marketState 초기화 포함)
-
   // 0DTE 탭 기본 로드 (Greeks/strikes — REST)
   load0DTE();
   auto0DTEInterval = setInterval(load0DTE, 60000);
@@ -1377,11 +1304,15 @@ function onWSPrices(prices) {
   // 현재가 메트릭 카드 업데이트
   const spotEl = document.getElementById('metric-spot-0dte');
   if (spotEl && newSpot) {
-    const pctStr = d.change != null ? ` ${d.change > 0 ? '+' : ''}${d.change.toFixed(2)}%` : '';
-    spotEl.querySelector('.val').textContent = `[${SHORT[state]||state}] $${newSpot.toFixed(2)}`;
-    spotEl.querySelector('.lbl').textContent = `${LABELS[state]||state}${pctStr}`;
+    const pctStr = d.change != null ? `${d.change > 0 ? '+' : ''}${d.change.toFixed(2)}%` : '';
+    const badgeCls = { PRE:'pre', REGULAR:'regular', AFTER:'after', CLOSED:'closed' }[state] || 'closed';
+    spotEl.querySelector('.spot-state-badge').className = `spot-state-badge ${badgeCls}`;
+    spotEl.querySelector('.spot-state-badge').textContent = LABELS[state] || state;
+    spotEl.querySelector('.val').textContent = `$${newSpot.toFixed(2)}`;
+    spotEl.querySelector('.lbl').textContent = pctStr;
     const colorCls = d.change > 0 ? ' green' : d.change < 0 ? ' red' : '';
     spotEl.className = 'metric blue' + (CLS[state] ? ' '+CLS[state] : '') + colorCls;
+    spotEl.style.cssText = 'display:flex;flex-direction:column;align-items:center;justify-content:center';
   }
 
   // OI차트 현재가 수직선만 별도 업데이트 (차트 전체 재렌더 없이)
