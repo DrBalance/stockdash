@@ -435,7 +435,7 @@ function computeGreeks(cboeJson) {
   }
   const strikes = Object.values(map).sort((a, b) => a.strike - b.strike);
 
-  const msToExp = new Date(todayISO) - new Date();
+  const msToExp = new Date(targetISO) - new Date();
   const T = Math.max(msToExp / (1000 * 60 * 60 * 24 * 365), 1 / 365);
   const safeT = Math.max(T, 0.5 / 365);
   const r_rate = 0.045;
@@ -576,8 +576,14 @@ app.get('/api/quote', (req, res) => {
   if (!data) return res.json({ symbol: sym, price: null, note: 'no_data_yet' });
   res.json({ symbol: sym, ...data });
 });
-app.get('/api/quotes',    (req, res) => res.json(state.prices));
-app.get('/api/market',    (req, res) => res.json(state.market));
+app.get('/api/quotes', async (req, res) => {
+  if (getMarketState() === 'CLOSED') await fetchClosedMarketData();
+  res.json(state.prices);
+});
+app.get('/api/market', async (req, res) => {
+  if (getMarketState() === 'CLOSED') await fetchClosedMarketData();
+  res.json(state.market);
+});
 app.get('/api/greeks', (req, res) => {
   const sym = (req.query.symbol || 'SPY').toUpperCase();
   const data = state.greeks[sym];
