@@ -1289,59 +1289,92 @@ function startClock() {
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// CLOSED 전용 프로시저 — WS 없이 1회성 조회로 화면 구성
+// CLOSED 전용 프로시저 — WS 없이 1회성 조회, render0DTE와 완전 독립
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 async function loadClosed() {
   const sym = document.getElementById('sym-select-0dte')?.value || 'SPY';
+  current0DTESym = sym;
   setStatus('updating');
 
   try {
-    // 1. 현재가/등락률 — 서버 /api/quotes (서버가 Yahoo fetch)
+    // ── 1. 현재가/등락률 ─────────────────────────────────
     let price = null, change = null;
     try {
       const r = await fetch(`${PROXY}/api/quotes`);
       const quotes = await r.json();
       const d = quotes[sym];
-      if (d?.price != null) {
-        price  = d.price;
-        change = d.change;
-      }
+      if (d?.price != null) { price = d.price; change = d.change; }
     } catch (e) { console.warn('[loadClosed] 현재가 실패:', e.message); }
 
-    // 2. VIX/VVIX — 서버 /api/market (서버가 Yahoo fetch)
+    // ── 2. VIX / VVIX ────────────────────────────────────
+    let vix = null, vvix = null, vixPct = null;
     try {
       const r = await fetch(`${PROXY}/api/market`);
       const m = await r.json();
-      if (m.vix  != null) vixVal  = m.vix;
-      if (m.vvix != null) vvixVal = m.vvix;
-      window._lastVixJson = {
-        VIX:  { price: m.vix,  pctChange: m.vixChangePct  ?? null },
-        VVIX: { price: m.vvix, pctChange: m.vvixChangePct ?? null },
-      };
+      vix = m.vix; vvix = m.vvix; vixPct = m.vixChangePct ?? null;
+      if (vix  != null) vixVal  = vix;
+      if (vvix != null) vvixVal = vvix;
     } catch (e) { console.warn('[loadClosed] VIX 실패:', e.message); }
 
-    // 3. 다음 거래일 옵션 데이터 — 서버 /api/gex0dte (CBOE)
+    // ── 3. 옵션 데이터 (다음 거래일) ─────────────────────
     const r = await fetch(`${PROXY}/api/gex0dte?symbol=${sym}`);
     const d0 = await r.json();
     if (d0.error) throw new Error(d0.error);
 
-    // 4. 화면 렌더링
-    const spotDisplay = price ? price.toFixed(1) : (d0.spotPrice?.toFixed(1) ?? '—');
+    // ── 4. 데이터 정리 ────────────────────────────────────
+    const strikes   = d0.strikes || [];
+    const spotPrice = d0.spotPrice;
+    const flipZone  = d0.flipZone;
+    const putWall   = d0.putWall;
+    const callWall  = d0.callWall;
+    const localGEX  = (d0.localGEX || 0) * 1e6;
+    const totalGEX  = (d0.totalGEX || 0) * 1e6;
+    const pcr       = d0.pcr ?? 0;
+    const exp       = d0.exp ?? '—';
+    const upStrikes = d0.upStrikes || [];
+    const dnStrikes = d0.dnStrikes || [];
+    const regime    = totalGEX >= 0 ? 'positive' : 'negative';
+    const spotDisplay = price ? price.toFixed(1) : spotPrice.toFixed(1);
     const pctStr      = change != null ? `${change >= 0 ? '+' : ''}${change.toFixed(2)}%` : '—';
-    const vixDisplay  = vixVal  ? vixVal.toFixed(2)  : '—';
-    const exp         = d0.exp ?? '—';
-    const nextDay     = d0.exp ?? '다음 거래일';
-    const flipZone    = d0.flipZone;
-    const putWall     = d0.putWall;
-    const callWall    = d0.callWall;
-    const localGEX    = (d0.localGEX ?? 0) * 1e6;
-    const pcr         = d0.pcr ?? 0;
-    const regime      = (d0.totalGEX ?? 0) >= 0 ? 'positive' : 'negative';
-    const vixPct      = window._lastVixJson?.VIX?.pctChange;
+    const vixDisplay  = vix ? vix.toFixed(2) : '—';
 
+    // ── 5. 알람 ──────────────────────────────────────────
+    const alarms = [];
+    const flipDist = flipZone ? Math.abs(spotPrice - flipZone) / spotPrice * 100 : null;
+    const putDist  = putWall  ? (spotPrice - putWall) / spotPrice * 100 : null;
+    if (!flipZone)           alarms.push({ l:'red',    m:`GEX 전 구간 ${regime==='negative'?'음수':'양수'} — Flip Zone 없음` });
+    else if (flipDist < 0.5) alarms.push({ l:'red',    m:`Flip Zone ($${flipZone}) 극근접 ${flipDist.toFixed(2)}% — 방향 전환 임박` });
+    else if (flipDist < 1.5) alarms.push({ l:'yellow', m:`Flip Zone ($${flipZone}) 근접 ${flipDist.toFixed(2)}%` });
+    if (putDist !== null && putDist < 1) alarms.push({ l:'red', m:`Put Wall ($${putWall}) 직하방 — 이탈 시 낙폭 가속` });
+    alarms.push(localGEX < 0
+      ? { l:'red',   m:`로컬 GEX ${(localGEX/1e6).toFixed(1)}M — 딜러 추세 증폭` }
+      : { l:'green', m:`로컬 GEX +${(localGEX/1e6).toFixed(1)}M — 딜러 변동성 억제` });
+    if (pcr > 1.5)      alarms.push({ l:'red',    m:`PCR ${pcr.toFixed(2)} — 풋 편중 심화` });
+    else if (pcr < 0.7) alarms.push({ l:'yellow', m:`PCR ${pcr.toFixed(2)} — 콜 편중` });
+
+    // ── 6. 헷지 스트라이크 행 ────────────────────────────
+    const maxUp   = Math.max(...upStrikes.map(s => s.callHedge), 1);
+    const maxDn   = Math.max(...dnStrikes.map(s => s.putHedge),  1);
+    const rankCls = i => ['r1','r2','r3','r4'][i] || 'r4';
+    const upRows  = upStrikes.map((s,i) => {
+      const dist = ((s.strike - spotPrice) / spotPrice * 100).toFixed(2);
+      const pct  = Math.round(s.callHedge / maxUp * 100);
+      return `<div class="hedge-row"><span class="hedge-rank ${rankCls(i)}">${i+1}</span><span class="hedge-strike">$${s.strike}</span><span class="hedge-dist">+${dist}%</span><div class="hedge-bar-wrap"><div class="hedge-bar up" style="width:${pct}%"></div></div><span class="hedge-pressure">${(s.callHedge/1e6).toFixed(1)}M</span></div>`;
+    }).join('');
+    const dnRows  = dnStrikes.map((s,i) => {
+      const dist = ((spotPrice - s.strike) / spotPrice * 100).toFixed(2);
+      const pct  = Math.round(s.putHedge / maxDn * 100);
+      return `<div class="hedge-row"><span class="hedge-rank ${rankCls(i)}">${i+1}</span><span class="hedge-strike">$${s.strike}</span><span class="hedge-dist">-${dist}%</span><div class="hedge-bar-wrap"><div class="hedge-bar dn" style="width:${pct}%"></div></div><span class="hedge-pressure">${(s.putHedge/1e6).toFixed(1)}M</span></div>`;
+    }).join('');
+
+    // ── 7. 시장 구조 판단 ─────────────────────────────────
+    const vc = { totalVanna: d0.vanna, totalCharm: d0.charm };
+    const fixedItems = buildFixedJudgment({ strikes, spotPrice, flipZone, putWall, callWall, localGEX, totalGEX, upStrikes, dnStrikes }, vc);
+
+    // ── 8. HTML 렌더 ─────────────────────────────────────
     document.getElementById('main-area-0dte').innerHTML = `
     <div class="card">
-      <div class="card-title">${sym} · 0DTE ${exp} · 마감 · 서버계산(CRON)</div>
+      <div class="card-title">${sym} · 0DTE ${exp} · 마감 · 서버계산(Cron)</div>
       <div class="regime-bar ${regime}">${regime==='positive'?'✚ Positive GEX — 딜러 변동성 억제 (피닝)':'▼ Negative GEX — 딜러 추세 증폭'}</div>
       <div id="alarm-list-0dte"></div>
       <div class="metrics">
@@ -1355,27 +1388,90 @@ async function loadClosed() {
         <div class="metric red"><div class="val">${putWall?'$'+putWall:'—'}</div><div class="lbl">Put Wall</div></div>
         <div class="metric green"><div class="val">${callWall?'$'+callWall:'—'}</div><div class="lbl">Call Wall</div></div>
         <div class="metric ${localGEX<0?'red':'green'}"><div class="val">${(localGEX/1e6).toFixed(1)}M</div><div class="lbl">Local GEX</div></div>
-        <div class="metric ${vixVal&&vixVal>30?'danger':vixVal&&vixVal>20?'warn':'yellow'}" id="metric-vix">
+        <div class="metric ${vix&&vix>30?'danger':vix&&vix>20?'warn':'yellow'}">
           <div class="val">${vixDisplay}${vixPct!=null?`<span style="font-size:12px;opacity:.75;margin-left:3px">(${vixPct>0?'+':''}${vixPct.toFixed(1)}%)</span>`:''}</div>
           <div class="lbl">VIX</div>
         </div>
         <div class="metric"><div class="val" style="font-size:16px">—</div><div class="lbl">VOLD</div></div>
-        <div class="metric" style="border-color:#bc8cff55"><div class="val" style="color:#bc8cff">${d0.vanna?.toFixed(1) ?? '—'}M</div><div class="lbl" style="color:#bc8cff">● Vanna Exp</div></div>
-        <div class="metric" style="border-color:#58a6ff55"><div class="val" style="color:#58a6ff">${d0.charm?.toFixed(1) ?? '—'}M</div><div class="lbl" style="color:#58a6ff">● Charm · VC ${Math.abs(d0.vanna??0)>0?(Math.abs(d0.charm??0)/Math.abs(d0.vanna)).toFixed(2):'—'}</div></div>
+        <div class="metric" style="border-color:#bc8cff55"><div class="val" style="color:#bc8cff">${d0.vanna?.toFixed(1)??'—'}M</div><div class="lbl" style="color:#bc8cff">● Vanna Exp</div></div>
+        <div class="metric" style="border-color:#58a6ff55"><div class="val" style="color:#58a6ff">${d0.charm?.toFixed(1)??'—'}M</div><div class="lbl" style="color:#58a6ff">● Charm · VC ${Math.abs(d0.vanna??0)>0?(Math.abs(d0.charm??0)/Math.abs(d0.vanna)).toFixed(2):'—'}</div></div>
       </div>
       <div class="judgment-panel" style="margin-top:20px">
+        <div class="judgment-fixed">
+          <div class="judgment-fixed-title">시장 구조 분석 — 0DTE 핵심 구조</div>
+          <div id="judgment-fixed-content-0dte">${fixedItems.map(item=>`<div class="judgment-item ${item.cls}"><span class="ji-icon">${item.icon}</span><span class="ji-text">${item.text}</span></div>`).join('')}</div>
+        </div>
         <div class="judgment-live">
           <div class="judgment-live-header">
             <div class="judgment-live-title"><div class="live-dot" style="background:var(--text3)"></div>실시간 상황 판단</div>
           </div>
-          <div class="judgment-live-scroll">
+          <div class="judgment-live-scroll" id="judgment-live-scroll-0dte">
             <div id="judgment-live-content-0dte">
-              <div class="live-event le-info"><span class="le-time">—</span><span class="le-msg">장 마감 — ${nextDay} 데이터입니다. ET 04:00 프리마켓 시작 시 실시간으로 전환됩니다.</span></div>
+              <div class="live-event le-info"><span class="le-time">—</span><span class="le-msg">장 마감 — ${exp} 다음 거래일 데이터입니다. ET 04:00 프리마켓 시작 시 실시간으로 전환됩니다.</span></div>
             </div>
           </div>
         </div>
       </div>
+      <div class="hedge-section">
+        <div class="hedge-title">딜러 헷지 부담 집중 스트라이크 (γ × OI 기준)</div>
+        <div class="hedge-grid">
+          <div><div class="hedge-col-label" style="color:var(--green)">▲ 상승 — 콜 헷지 Top4</div>${upRows||'<div style="color:var(--text3);font-size:13px;padding:8px">데이터 없음</div>'}</div>
+          <div><div class="hedge-col-label" style="color:var(--red)">▼ 하락 — 풋 헷지 Top4</div>${dnRows||'<div style="color:var(--text3);font-size:13px;padding:8px">데이터 없음</div>'}</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">OI 분포 + GEX (0DTE)</div>
+      <div class="chart-controls">
+        <span class="zoom-label">확대</span>
+        <input type="range" class="zoom-slider" id="zoom-slider" min="1" max="6" step="0.5" value="1" oninput="updateZoom(this.value)">
+        <span class="zoom-val" id="zoom-val">1×</span>
+        <span class="scroll-hint">← 가로 스크롤 →</span>
+      </div>
+      <div class="chart-scroll-wrap" id="chart-scroll-wrap">
+        <div class="chart-inner" id="chart-inner"><canvas id="mainchart"></canvas></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">스트라이크별 상세 — 현재가 ±10%</div>
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>Strike</th><th>Call OI</th><th>Put OI</th><th>GEX(M)</th><th>IV</th></tr></thead>
+        <tbody id="tbl-body-0dte"></tbody>
+      </table></div>
     </div>`;
+
+    // ── 9. 알람 렌더 ─────────────────────────────────────
+    const al = document.getElementById('alarm-list-0dte');
+    (alarms.length ? alarms : [{ l:'green', m:'특이 리스크 없음' }]).forEach(a => {
+      const div = document.createElement('div');
+      div.className = `alarm ${a.l}`; div.textContent = a.m; al.appendChild(div);
+    });
+
+    // ── 10. OI 차트 ──────────────────────────────────────
+    const chartData = strikes.filter(s => Math.abs(s.strike - spotPrice) / spotPrice < 0.08);
+    requestAnimationFrame(() => {
+      buildChart(chartData, price || spotPrice, flipZone, putWall, callWall);
+    });
+
+    // ── 11. 스트라이크 테이블 ────────────────────────────
+    const tableData = strikes.filter(s => Math.abs(s.strike - spotPrice) / spotPrice < 0.10);
+    const tbody = document.getElementById('tbl-body-0dte');
+    if (tbody) tableData.forEach(s => {
+      const isCur  = Math.abs(s.strike - (price||spotPrice)) < 0.5;
+      const isFlip = s.strike === flipZone;
+      const gc = s.gex >= 0 ? '#3fb950' : '#f85149';
+      const tr = document.createElement('tr');
+      if (isCur) tr.className = 'cur'; else if (isFlip) tr.className = 'flip';
+      let tags = '';
+      if (isCur)              tags += `<span class="tag tag-cur">현재가</span>`;
+      if (isFlip)             tags += `<span class="tag tag-flip">Flip</span>`;
+      if (s.strike === putWall)  tags += `<span class="tag tag-pw">Put Wall</span>`;
+      if (s.strike === callWall) tags += `<span class="tag tag-cw">Call Wall</span>`;
+      tr.innerHTML = `<td>$${s.strike}${tags}</td><td>${s.callOI.toLocaleString()}</td><td>${s.putOI.toLocaleString()}</td><td style="color:${gc};font-weight:600">${s.gex>=0?'+':''}${(s.gex/1e6).toFixed(2)}</td><td>${s.iv>0?(s.iv*100).toFixed(1)+'%':'—'}</td>`;
+      tbody.appendChild(tr);
+    });
 
     setStatus('live');
   } catch (e) {
