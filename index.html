@@ -927,9 +927,8 @@ function render0DTE(d0, newSpot, marketState, preMarketPct, prevClose, timeStr) 
   const stateShort  = { PRE:'프리', REGULAR:'정규', AFTER:'애프터', CLOSED:'마감' }[marketState] || marketState;
   const stateCls    = { PRE:'pre-market', REGULAR:'', AFTER:'after-market', CLOSED:'' }[marketState] || '';
   const badgeCls    = { PRE:'pre', REGULAR:'regular', AFTER:'after', CLOSED:'closed' }[marketState] || 'closed';
-  const pctBase = prevClose ?? spotPrice;
-  const pct     = (newSpot && pctBase) ? ((newSpot - pctBase) / pctBase * 100) : 0;
-  const pctStr  = `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%`;
+  const change      = window._lastPriceJson?.prevChange ?? null;
+  const pctStr      = change != null ? `${change >= 0 ? '+' : ''}${change.toFixed(2)}%` : '—';
 
   document.getElementById('main-area-0dte').innerHTML = `
   <div class="card">
