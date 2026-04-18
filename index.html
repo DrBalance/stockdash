@@ -1321,6 +1321,23 @@ async function loadClosed() {
     if (d0.error) throw new Error(d0.error);
 
     window._lastPriceJson = { price, prevChange: change, marketState: 'CLOSED' };
+
+    // render0DTE가 참조하는 currentD 사전 설정
+    currentD = {
+      strikes:   d0.strikes || [],
+      spotPrice: d0.spotPrice,
+      flipZone:  d0.flipZone,
+      putWall:   d0.putWall,
+      callWall:  d0.callWall,
+      localGEX:  (d0.localGEX || 0) * 1e6,
+      totalGEX:  (d0.totalGEX || 0) * 1e6,
+      pcr:       d0.pcr,
+      exp:       d0.exp,
+      sym,
+      upStrikes: d0.upStrikes || [],
+      dnStrikes: d0.dnStrikes || [],
+    };
+    currentStrikes = currentD.strikes;
     const timeStr = new Date().toLocaleTimeString('en-GB', {
       hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Seoul'
     });
