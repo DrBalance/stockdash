@@ -11,7 +11,6 @@ import { WebSocket, WebSocketServer } from 'ws';
 import cron from 'node-cron';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import yahooFinance from 'yahoo-finance2';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = path.dirname(__filename);
@@ -61,20 +60,25 @@ function broadcast(type, data) {
 
 // CLOSED 시 현재가(종가) + VIX/VVIX 1회 fetch
 async function fetchClosedMarketData() {
-  // 현재가 — yahoo-finance2
+  // 현재가 — Yahoo v8 chart range=1d (chartPreviousClose가 정확한 전일 종가)
   for (const sym of WATCH_SYMBOLS) {
     try {
-      const quote = await yahooFinance.quote(sym);
-      const price     = quote.regularMarketPrice ?? null;
-      const prevClose = quote.regularMarketPreviousClose ?? null;
-      const changePct = quote.regularMarketChangePercent != null
-        ? +quote.regularMarketChangePercent.toFixed(2)
+      const r = await fetch(
+        'https://query1.finance.yahoo.com/v8/finance/chart/' + sym + '?interval=1d&range=1d',
+        { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(8000) }
+      );
+      const j = await r.json();
+      const meta = j?.chart?.result?.[0]?.meta;
+      if (!meta) continue;
+      const price     = meta.regularMarketPrice ?? null;
+      const prevClose = meta.chartPreviousClose ?? null;
+      const changePct = (price != null && prevClose != null)
+        ? +((price - prevClose) / prevClose * 100).toFixed(2)
         : null;
       console.log(`[ClosedData] ${sym} price=${price} prevClose=${prevClose} changePct=${changePct}`);
       if (!state.prices[sym]) state.prices[sym] = {};
       state.prices[sym] = {
-        price,
-        prevClose,
+        price, prevClose,
         change:         changePct,
         marketState:    'CLOSED',
         nextTradingDay: getNextTradingDay(),
@@ -86,17 +90,11 @@ async function fetchClosedMarketData() {
   // VIX / VVIX
   try {
     const q = await fetchYahooQuote('^VIX');
-    if (q.price != null) {
-      state.market.vix = parseFloat(q.price.toFixed(2));
-      state.market.vixChangePct = q.changePct;
-    }
+    if (q.price != null) { state.market.vix = parseFloat(q.price.toFixed(2)); state.market.vixChangePct = q.changePct; }
   } catch (e) { console.warn('[ClosedData] VIX 실패:', e.message); }
   try {
     const q = await fetchYahooQuote('^VVIX');
-    if (q.price != null) {
-      state.market.vvix = parseFloat(q.price.toFixed(2));
-      state.market.vvixChangePct = q.changePct;
-    }
+    if (q.price != null) { state.market.vvix = parseFloat(q.price.toFixed(2)); state.market.vvixChangePct = q.changePct; }
   } catch (e) { console.warn('[ClosedData] VVIX 실패:', e.message); }
 
   state.market.vold           = null;
@@ -252,16 +250,11 @@ function connectFinnhub() {
 async function updatePrevClose() {
   for (const sym of WATCH_SYMBOLS) {
     try {
-      const quote = await yahooFinance.quote(sym);
-      const price     = quote.regularMarketPrice ?? null;
-      const prevClose = quote.regularMarketPreviousClose ?? null;
-      const changePct = quote.regularMarketChangePercent != null
-        ? +quote.regularMarketChangePercent.toFixed(2)
-        : null;
+      const q = await fetchYahooQuote(sym);
       if (!state.prices[sym]) state.prices[sym] = {};
-      state.prices[sym].prevClose = prevClose;
-      state.prices[sym].change    = changePct;
-      console.log(`[prevClose] ${sym} price=${price} prevClose=${prevClose} change=${changePct}`);
+      state.prices[sym].prevClose = q.prevClose;
+      state.prices[sym].change    = q.changePct;
+      console.log(`[prevClose] ${sym} price=${q.price} prevClose=${q.prevClose} change=${q.changePct}`);
     } catch (e) { console.warn('[prevClose] ' + sym + ' 실패:', e.message); }
   }
   console.log('[prevClose] 완료');
@@ -271,13 +264,21 @@ async function updatePrevClose() {
 // 2. Yahoo — VIX / VVIX / VOLD (1분 Cron)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 async function fetchYahooQuote(symbol) {
-  const quote = await yahooFinance.quote(symbol);
-  const price     = quote.regularMarketPrice ?? null;
-  const prevClose = quote.regularMarketPreviousClose ?? null;
-  const changePct = quote.regularMarketChangePercent != null
-    ? +quote.regularMarketChangePercent.toFixed(2)
+  const encoded = encodeURIComponent(symbol);
+  const r = await fetch(
+    'https://query1.finance.yahoo.com/v8/finance/chart/' + encoded + '?interval=1d&range=1d',
+    { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(8000) }
+  );
+  if (!r.ok) throw new Error('Yahoo ' + symbol + ' HTTP ' + r.status);
+  const j = await r.json();
+  const meta = j?.chart?.result?.[0]?.meta;
+  if (!meta) throw new Error('Yahoo ' + symbol + ' no meta');
+  const price     = meta.regularMarketPrice ?? null;
+  const prevClose = meta.chartPreviousClose ?? null;
+  const changePct = (price != null && prevClose != null)
+    ? +((price - prevClose) / prevClose * 100).toFixed(2)
     : null;
-  const volume    = quote.regularMarketVolume ?? null;
+  const volume = meta.regularMarketVolume ?? null;
   return { price, prevClose, changePct, volume };
 }
 
