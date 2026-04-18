@@ -969,17 +969,17 @@ function render0DTE(d0, newSpot, marketState, preMarketPct, prevClose, timeStr) 
 
   <div class="vc-panel-wrap" style="flex-direction:column">
     <div id="greek-metrics-row" style="display:flex;gap:10px;flex-wrap:wrap;padding:14px 20px 0;border-bottom:1px solid var(--border)">
-      <div class="greek-metric-card" id="gmc-vanna"><div class="gmc-header"><span class="gmc-dot" id="gmc-vanna-dot"></span><span class="gmc-name">Vanna</span><span class="gmc-signal" id="gmc-vanna-signal">—</span></div><div class="gmc-value" id="gmc-vanna-val">—</div><div class="gmc-desc" id="gmc-vanna-desc">갱신 후 표시</div></div>
-      <div class="greek-metric-card" id="gmc-charm"><div class="gmc-header"><span class="gmc-dot" id="gmc-charm-dot"></span><span class="gmc-name">Charm</span><span class="gmc-signal" id="gmc-charm-signal">—</span></div><div class="gmc-value" id="gmc-charm-val">—</div><div class="gmc-desc" id="gmc-charm-desc">갱신 후 표시</div></div>
-      <div class="greek-metric-card" id="gmc-gex"><div class="gmc-header"><span class="gmc-dot" id="gmc-gex-dot"></span><span class="gmc-name">Local GEX</span><span class="gmc-signal" id="gmc-gex-signal">—</span></div><div class="gmc-value" id="gmc-gex-val">—</div><div class="gmc-desc" id="gmc-gex-desc">갱신 후 표시</div></div>
+      <div class="greek-metric-card" id="gmc-vanna"><div class="gmc-header"><span class="gmc-dot" id="gmc-vanna-dot" style="background:var(--purple)"></span><span class="gmc-name" id="gmc-vanna-name" style="color:var(--purple)">Vanna</span><span class="gmc-signal" id="gmc-vanna-signal">—</span></div><div class="gmc-value" id="gmc-vanna-val">—</div><div class="gmc-desc" id="gmc-vanna-desc">갱신 후 표시</div></div>
+      <div class="greek-metric-card" id="gmc-charm"><div class="gmc-header"><span class="gmc-dot" id="gmc-charm-dot" style="background:var(--blue)"></span><span class="gmc-name" id="gmc-charm-name" style="color:var(--blue)">Charm</span><span class="gmc-signal" id="gmc-charm-signal">—</span></div><div class="gmc-value" id="gmc-charm-val">—</div><div class="gmc-desc" id="gmc-charm-desc">갱신 후 표시</div></div>
+      <div class="greek-metric-card" id="gmc-gex"><div class="gmc-header"><span class="gmc-dot" id="gmc-gex-dot" style="background:var(--green)"></span><span class="gmc-name" id="gmc-gex-name" style="color:var(--green)">Local GEX</span><span class="gmc-signal" id="gmc-gex-signal">—</span></div><div class="gmc-value" id="gmc-gex-val">—</div><div class="gmc-desc" id="gmc-gex-desc">갱신 후 표시</div></div>
       <div class="greek-metric-card" style="flex:1;min-width:160px" id="gmc-dominant"><div class="gmc-header"><span class="gmc-name" style="color:var(--text2)">◈ 지배 Greek</span></div><div class="gmc-value" id="gmc-dominant-val" style="font-size:13px">—</div><div class="gmc-desc" id="gmc-flip-desc">—</div></div>
     </div>
     <div class="vc-chart-area" style="width:100%;border-right:none">
       <div class="vc-chart-header">
         <div class="vc-chart-title">◈ Greek 실시간 흐름 (서버 계산 · Cron 5분)</div>
         <div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">
-          <span style="font-size:12px;color:#bc8cff;font-weight:600">● Vanna</span>
-          <span style="font-size:12px;color:#58a6ff;font-weight:600">● Charm</span>
+          <span style="font-size:12px;color:var(--purple);font-weight:600">● Vanna</span>
+          <span style="font-size:12px;color:var(--blue);font-weight:600">● Charm</span>
           <span style="font-size:12px;color:#d29922;font-weight:600">● VV</span>
           <span style="font-size:12px;color:#3fb950;font-weight:600">● VOLD</span>
         </div>
@@ -1004,7 +1004,7 @@ function render0DTE(d0, newSpot, marketState, preMarketPct, prevClose, timeStr) 
           <!-- 페인1: Vanna + Charm -->
           <div style="position:relative">
             <div style="font-size:10px;color:var(--text3);padding:4px 8px;display:flex;gap:10px">
-              <span style="color:#bc8cff">● Vanna</span><span style="color:#58a6ff">● Charm</span>
+              <span style="color:var(--purple)">● Vanna</span><span style="color:var(--blue)">● Charm</span>
             </div>
             <div id="vc-pane-vc-wrap" style="position:relative;height:220px">
               <canvas id="vc-pane-vc"></canvas>
@@ -1858,21 +1858,29 @@ function renderGreekMetrics(force) {
   const set = (id, val) => { const el=document.getElementById(id); if(el) el.innerHTML=val; };
   const setStyle = (id, prop, val) => { const el=document.getElementById(id); if(el) el.style[prop]=val; };
 
-  // dot 색상: 부호 기준 (양수=초록, 음수=빨강)
-  setStyle('gmc-vanna-dot', 'background', vanna.value >= 0 ? 'var(--green)' : 'var(--red)');
-  setStyle('gmc-charm-dot', 'background', charm.value >= 0 ? 'var(--green)' : 'var(--red)');
-  setStyle('gmc-gex-dot',   'background', gex.value   >= 0 ? 'var(--green)' : 'var(--red)');
+  // dot·이름 색상: 메트릭 카드 고정 컬러코드 (Vanna=보라, Charm=파랑, GEX=초록)
+  setStyle('gmc-vanna-dot',  'background', 'var(--purple)');
+  setStyle('gmc-charm-dot',  'background', 'var(--blue)');
+  setStyle('gmc-gex-dot',    'background', 'var(--green)');
+  setStyle('gmc-vanna-name', 'color', 'var(--purple)');
+  setStyle('gmc-charm-name', 'color', 'var(--blue)');
+  setStyle('gmc-gex-name',   'color', 'var(--green)');
+
+  // 수치 색상: 플러스=초록, 마이너스=빨강
+  const vannaValColor = vanna.value >= 0 ? 'var(--green)' : 'var(--red)';
+  const charmValColor = charm.value >= 0 ? 'var(--green)' : 'var(--red)';
+  const gexValColor   = gex.value   >= 0 ? 'var(--green)' : 'var(--red)';
 
   set('gmc-vanna-signal', vannaSignal);
-  set('gmc-vanna-val', `<span style="color:${vannaColor}">${vanna.value >= 0 ? '+' : ''}${vanna.value.toFixed(0)}M</span>`);
+  set('gmc-vanna-val', `<span style="color:${vannaValColor}">${vanna.value >= 0 ? '+' : ''}${vanna.value.toFixed(0)}M</span>`);
   set('gmc-vanna-desc', `${vanna.dir === 'sell' ? 'VIX↑ 매도압력' : 'VIX↑ 매수압력'}${vannaArrow}${vanna.vixChange !== 0 ? ` · VIX ${vanna.vixChange>0?'+':''}${vanna.vixChange.toFixed(1)}%` : ''}`);
 
   set('gmc-charm-signal', charmSignal);
-  set('gmc-charm-val', `<span style="color:${charmColor}">${charm.value >= 0 ? '+' : ''}${charm.value.toFixed(0)}M</span>`);
+  set('gmc-charm-val', `<span style="color:${charmValColor}">${charm.value >= 0 ? '+' : ''}${charm.value.toFixed(0)}M</span>`);
   set('gmc-charm-desc', `${charm.dir === 'buy' ? '매수 드리프트' : '매도 드리프트'}${charmArrow}`);
 
   set('gmc-gex-signal', gexSignal);
-  set('gmc-gex-val', `<span style="color:${gexColor}">${gex.value > 0 ? '+' : ''}${gex.value.toFixed(0)}M</span>`);
+  set('gmc-gex-val', `<span style="color:${gexValColor}">${gex.value > 0 ? '+' : ''}${gex.value.toFixed(0)}M</span>`);
   set('gmc-gex-desc', `로컬 GEX${gexArrow}`);
 
   set('gmc-dominant-val', dominant);
@@ -3057,31 +3065,29 @@ function buildChart(chartData, sp, flipZone, putWall, callWall, sfx) {
 
         ctx.save();
 
-        // ── 왼쪽 y축 고정 (스크롤 시만) ──
-        if (scrollX > 0) {
-          const axisW = yScale.right;
-          ctx.fillStyle = '#161b22';
-          ctx.fillRect(scrollX, 0, axisW, height);
-          ctx.textAlign = 'right';
-          ctx.textBaseline = 'middle';
-          ctx.fillStyle = '#6e7681';
-          ctx.font = '11px monospace';
-          yScale.ticks.forEach((tick, i) => {
-            const y = yScale.getPixelForTick(i);
-            const abs = Math.abs(tick.value);
-            const sign = tick.value < 0 ? '-' : '';
-            let label = abs >= 1000000 ? sign+Math.round(abs/1e6)+'M'
-                      : abs >= 1000    ? sign+Math.round(abs/1000)+'K'
-                      : String(tick.value);
-            ctx.fillText(label, scrollX + axisW - 4, y);
-          });
-          ctx.strokeStyle = '#30363d';
-          ctx.lineWidth = 1;
-          ctx.beginPath();
-          ctx.moveTo(scrollX + axisW, chartArea.top);
-          ctx.lineTo(scrollX + axisW, chartArea.bottom);
-          ctx.stroke();
-        }
+        // ── 왼쪽 y축 고정 (항상 표시)
+        const axisW = yScale.right;
+        ctx.fillStyle = '#161b22';
+        ctx.fillRect(scrollX, 0, axisW, height);
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = '#6e7681';
+        ctx.font = '11px monospace';
+        yScale.ticks.forEach((tick, i) => {
+          const y = yScale.getPixelForTick(i);
+          const abs = Math.abs(tick.value);
+          const sign = tick.value < 0 ? '-' : '';
+          let label = abs >= 1000000 ? sign+Math.round(abs/1e6)+'M'
+                    : abs >= 1000    ? sign+Math.round(abs/1000)+'K'
+                    : String(tick.value);
+          ctx.fillText(label, scrollX + axisW - 4, y);
+        });
+        ctx.strokeStyle = '#30363d';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(scrollX + axisW, chartArea.top);
+        ctx.lineTo(scrollX + axisW, chartArea.bottom);
+        ctx.stroke();
 
         // ── 오른쪽 y2축 고정 (확대/스크롤 모두 항상 표시) ──
         if (y2Scale && (scrollX > 0 || wrapW < width)) {
