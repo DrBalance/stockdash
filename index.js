@@ -70,13 +70,16 @@ async function fetchClosedMarketData() {
       const j = await r.json();
       const meta = j?.chart?.result?.[0]?.meta;
       if (!meta) continue;
-      const price     = meta.regularMarketPrice ?? meta.chartPreviousClose;
-      const prevClose = meta.chartPreviousClose;
+      const price      = meta.regularMarketPrice ?? meta.chartPreviousClose;
+      const prevClose  = meta.chartPreviousClose;
+      const changePct  = meta.regularMarketChangePercent != null
+        ? +meta.regularMarketChangePercent.toFixed(2)
+        : (prevClose ? +((price - prevClose) / prevClose * 100).toFixed(2) : null);
       if (!state.prices[sym]) state.prices[sym] = {};
       state.prices[sym] = {
         price,
         prevClose,
-        change: prevClose ? +((price - prevClose) / prevClose * 100).toFixed(2) : null,
+        change:         changePct,
         marketState:    'CLOSED',
         nextTradingDay: getNextTradingDay(),
         updatedAt:      new Date().toISOString(),
@@ -264,6 +267,9 @@ async function updatePrevClose() {
       if (meta?.chartPreviousClose) {
         if (!state.prices[sym]) state.prices[sym] = {};
         state.prices[sym].prevClose = meta.chartPreviousClose;
+        if (meta.regularMarketChangePercent != null) {
+          state.prices[sym].change = +meta.regularMarketChangePercent.toFixed(2);
+        }
       }
     } catch (e) { console.warn('[prevClose] ' + sym + ' 실패:', e.message); }
   }

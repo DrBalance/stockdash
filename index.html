@@ -788,22 +788,15 @@ async function load0DTE() {
 
     if (d0.error) throw new Error(d0.error);
 
-    // 현재가/VIX는 loadQuote()에서 관리 — 여기서는 캐시값 사용
-    const priceJson = window._lastPriceJson || {};
-    const vixJson   = window._lastVixJson   || {};
-
-    // VV 계산: priceHistory에서 5분 전 VIX와 현재 VIX 비교
-    let vvNow = null;
-    const vixHistoryPts = vcHistory.filter(h => h.vix != null);
-    if (vixHistoryPts.length >= 1 && vixVal != null) {
-      const prev5 = vixHistoryPts.length >= 1 ? vixHistoryPts[vixHistoryPts.length - 1] : null;
-      if (prev5 && prev5.vix != null) {
-        vvNow = parseFloat(((vixVal - prev5.vix) / 5).toFixed(4));
-      }
+    // CLOSED 시: Yahoo에서 직접 현재가/VIX/VVIX 1회 fetch
+    const marketState = window._marketState || 'REGULAR';
+    if (marketState === 'CLOSED') {
+      await fetchClosedQuotes(sym);
     }
 
-    const newSpot = priceJson.price || d0.spotPrice;
-    const marketState = window._marketState || priceJson.marketState || 'REGULAR';
+    // 현재가/VIX는 WS 또는 fetchClosedQuotes에서 관리 — 캐시값 사용
+    const priceJson  = window._lastPriceJson || {};
+    const newSpot    = priceJson.price || d0.spotPrice;
     const preMarketPct = priceJson.preMarketChangePercent;
     const prevClose    = priceJson.prevClose;
 
@@ -1304,14 +1297,77 @@ function startClock() {
   setInterval(tick, 1000);
 }
 
-window.addEventListener('DOMContentLoaded', async () => {
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// CLOSED 시 Yahoo에서 직접 현재가/VIX/VVIX 1회 fetch
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+async function fetchClosedQuotes(sym) {
+  const yahooFetch = async (symbol) => {
+    const encoded = encodeURIComponent(symbol);
+    const r = await fetch(
+      `https://query1.finance.yahoo.com/v8/finance/chart/${encoded}?interval=1d&range=5d`,
+      { headers: { 'User-Agent': 'Mozilla/5.0' } }
+    );
+    const j = await r.json();
+    return j?.chart?.result?.[0]?.meta ?? null;
+  };
+
+  // 현재가
+  try {
+    const meta = await yahooFetch(sym);
+    if (meta) {
+      const price     = meta.regularMarketPrice ?? meta.chartPreviousClose;
+      const prevClose = meta.chartPreviousClose;
+      const change    = meta.regularMarketChangePercent != null
+        ? +meta.regularMarketChangePercent.toFixed(2)
+        : (prevClose ? +((price - prevClose) / prevClose * 100).toFixed(2) : null);
+      window._lastPriceJson = { price, prevClose, prevChange: change, marketState: 'CLOSED' };
+    }
+  } catch (e) { console.warn('[ClosedQuotes] 현재가 실패:', e.message); }
+
+  // VIX
+  try {
+    const meta = await yahooFetch('^VIX');
+    if (meta) {
+      vixVal = meta.regularMarketPrice;
+      window._lastVixJson = {
+        VIX: {
+          price: vixVal,
+          pctChange: meta.regularMarketChangePercent != null
+            ? +meta.regularMarketChangePercent.toFixed(2) : null,
+        },
+        VVIX: window._lastVixJson?.VVIX ?? { price: null, pctChange: null },
+      };
+    }
+  } catch (e) { console.warn('[ClosedQuotes] VIX 실패:', e.message); }
+
+  // VVIX
+  try {
+    const meta = await yahooFetch('^VVIX');
+    if (meta) {
+      vvixVal = meta.regularMarketPrice;
+      window._lastVixJson = {
+        ...window._lastVixJson,
+        VVIX: {
+          price: vvixVal,
+          pctChange: meta.regularMarketChangePercent != null
+            ? +meta.regularMarketChangePercent.toFixed(2) : null,
+        },
+      };
+    }
+  } catch (e) { console.warn('[ClosedQuotes] VVIX 실패:', e.message); }
+
+  // VOLD — 마감 후 의미 없음
+  window._lastVold = null;
+  console.log('[ClosedQuotes] 완료 — 현재가:', window._lastPriceJson?.price, 'VIX:', vixVal);
+}
+
+
   startClock(); // 가장 먼저 — window._marketState 초기화
   load0DTE();
-  // CLOSED 시에는 자동갱신 없음 (startClock에서 PRE 전환 시 재시작)
   if (window._marketState !== 'CLOSED') {
     auto0DTEInterval = setInterval(load0DTE, 60000);
+    connectWS();
   }
-  connectWS();
 });
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
