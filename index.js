@@ -58,9 +58,58 @@ function broadcast(type, data) {
   }
 }
 
-wss.on('connection', (ws) => {
+// CLOSED 시 현재가(종가) + VIX/VVIX 1회 fetch
+async function fetchClosedMarketData() {
+  // 현재가 — Yahoo regularMarketPrice (종가)
+  for (const sym of WATCH_SYMBOLS) {
+    try {
+      const r = await fetch(
+        'https://query1.finance.yahoo.com/v8/finance/chart/' + sym + '?interval=1d&range=5d',
+        { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(8000) }
+      );
+      const j = await r.json();
+      const meta = j?.chart?.result?.[0]?.meta;
+      if (!meta) continue;
+      const price     = meta.regularMarketPrice ?? meta.chartPreviousClose;
+      const prevClose = meta.chartPreviousClose;
+      if (!state.prices[sym]) state.prices[sym] = {};
+      state.prices[sym] = {
+        price,
+        prevClose,
+        change: prevClose ? +((price - prevClose) / prevClose * 100).toFixed(2) : null,
+        marketState:    'CLOSED',
+        nextTradingDay: getNextTradingDay(),
+        updatedAt:      new Date().toISOString(),
+      };
+    } catch (e) { console.warn('[ClosedData] ' + sym + ' 실패:', e.message); }
+  }
+
+  // VIX / VVIX — Yahoo 1회 fetch
+  try {
+    const vix = await fetchYahooQuote('^VIX');
+    if (vix != null) state.market.vix = parseFloat(vix.toFixed(2));
+  } catch (e) { console.warn('[ClosedData] VIX 실패:', e.message); }
+  try {
+    const vvix = await fetchYahooQuote('^VVIX');
+    if (vvix != null) state.market.vvix = parseFloat(vvix.toFixed(2));
+  } catch (e) { console.warn('[ClosedData] VVIX 실패:', e.message); }
+
+  // VOLD — null (마감 후 의미 없음)
+  state.market.vold       = null;
+  state.market.marketState    = 'CLOSED';
+  state.market.nextTradingDay = getNextTradingDay();
+  state.market.updatedAt      = new Date().toISOString();
+
+  console.log('[ClosedData] 완료 — nextTradingDay:', getNextTradingDay());
+}
+
+wss.on('connection', async (ws) => {
   console.log('[WS] 클라이언트 연결 — 총 ' + wss.clients.size + '개');
   try {
+    const ms = getMarketState();
+    if (ms === 'CLOSED') {
+      await fetchClosedMarketData();
+    }
     ws.send(JSON.stringify({
       type: 'init',
       data: { prices: state.prices, market: state.market },
@@ -84,10 +133,43 @@ function isExtendedHours() {
   return dow >= 1 && dow <= 5 && h >= 4 && h < 20;
 }
 
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 휴장일 관리
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+let holidaySet = new Set(); // 'YYYY-MM-DD'
+
+async function fetchHolidays() {
+  try {
+    const r = await fetch(
+      `https://finnhub.io/api/v1/stock/market-holiday?exchange=US&token=${FINNHUB_TOKEN}`,
+      { signal: AbortSignal.timeout(8000) }
+    );
+    const j = await r.json();
+    holidaySet = new Set(
+      (j.data || []).filter(h => !h.atNormalTime).map(h => h.eventDay)
+    );
+    console.log('[Holiday] 로드 완료:', holidaySet.size, '일');
+  } catch (e) {
+    console.warn('[Holiday] 로드 실패:', e.message);
+  }
+}
+
+// 다음 거래일 계산 ('YYYY-MM-DD' 반환)
+function getNextTradingDay(fromDate = new Date()) {
+  const d = new Date(fromDate);
+  for (let i = 1; i <= 10; i++) {
+    d.setDate(d.getDate() + 1);
+    const dow = d.getUTCDay();
+    const iso = d.toISOString().slice(0, 10);
+    if (dow !== 0 && dow !== 6 && !holidaySet.has(iso)) return iso;
+  }
+  return null;
+}
+
 // 장 상태 판별 — 서버에서 한 번만 계산, prices WS로 전달
-// 클라이언트는 이 값을 그대로 사용 (타임존 판단 중복 방지)
-// 'AFTER' 통일 (Yahoo의 'POST'와 다름에 주의)
 function getMarketState() {
+  const today = todayEST();
+  if (holidaySet.has(today)) return 'CLOSED';  // 휴장일
   const h = estHour(), dow = nowEST().getDay();
   if (dow === 0 || dow === 6)    return 'CLOSED';   // 주말
   if (h >= 4   && h <  9.5)     return 'PRE';      // 프리장
@@ -122,19 +204,25 @@ function connectFinnhub() {
     try {
       const msg = JSON.parse(raw.toString());
       if (msg.type !== 'trade' || !Array.isArray(msg.data)) return;
+      const ms = getMarketState();
       const updated = {};
       for (const trade of msg.data) {
         const sym = trade.s, price = trade.p;
         if (!sym || price == null) continue;
         const prev = state.prices[sym];
+        // CLOSED 시: 현재가 대신 prevClose 사용
+        const displayPrice = ms === 'CLOSED'
+          ? (prev?.prevClose ?? price)
+          : price;
         state.prices[sym] = {
-          price,
+          price:       displayPrice,
           prevClose:   prev?.prevClose ?? null,
           change: prev?.prevClose != null
-            ? +((price - prev.prevClose) / prev.prevClose * 100).toFixed(2)
+            ? +((displayPrice - prev.prevClose) / prev.prevClose * 100).toFixed(2)
             : null,
-          marketState: getMarketState(),  // 'PRE' | 'REGULAR' | 'AFTER' | 'CLOSED'
-          updatedAt:   new Date().toISOString(),
+          marketState:     ms,
+          nextTradingDay:  ms === 'CLOSED' ? getNextTradingDay() : null,
+          updatedAt:       new Date().toISOString(),
         };
         updated[sym] = state.prices[sym];
       }
@@ -193,6 +281,7 @@ async function fetchYahooQuote(symbol) {
 }
 
 async function cronMarket() {
+  const ms = getMarketState();
   const today = todayEST();
   const nowIso = new Date().toISOString();
 
@@ -205,23 +294,25 @@ async function cronMarket() {
   catch (e) { console.warn('[Cron] VVIX 실패:', e.message); }
 
   let uvolNow = null, dvolNow = null, voldNow = null;
-  const ms = getMarketState();
 
-  try { uvolNow = await fetchYahooQuote('C:UVOL'); console.log('[Cron] UVOL:', uvolNow); }
-  catch (e) { console.warn('[Cron] UVOL 실패:', e.message); }
-  try { dvolNow = await fetchYahooQuote('C:DVOL'); console.log('[Cron] DVOL:', dvolNow); }
-  catch (e) { console.warn('[Cron] DVOL 실패:', e.message); }
+  // CLOSED 시: VOLD는 null(—) 처리, VIX는 이전값 유지
+  if (ms !== 'CLOSED') {
+    try { uvolNow = await fetchYahooQuote('C:UVOL'); console.log('[Cron] UVOL:', uvolNow); }
+    catch (e) { console.warn('[Cron] UVOL 실패:', e.message); }
+    try { dvolNow = await fetchYahooQuote('C:DVOL'); console.log('[Cron] DVOL:', dvolNow); }
+    catch (e) { console.warn('[Cron] DVOL 실패:', e.message); }
 
-  if (uvolNow != null && dvolNow != null) {
-    const calculated = uvolNow - dvolNow;
-    if (ms === 'PRE') {
-      voldNow = 0;                                                    // 프리장: 초기화
-    } else if (ms === 'REGULAR') {
-      voldNow = calculated;                                           // 장중: 실시간
-    } else {
-      voldNow = calculated !== 0 ? calculated : state.market.vold;   // AFTER/CLOSED: 0이면 이전값 유지
+    if (uvolNow != null && dvolNow != null) {
+      const calculated = uvolNow - dvolNow;
+      if (ms === 'PRE') {
+        voldNow = 0;
+      } else if (ms === 'REGULAR') {
+        voldNow = calculated;
+      } else {
+        voldNow = calculated !== 0 ? calculated : state.market.vold;
+      }
+      console.log('[Cron] VOLD:', voldNow, '(' + ms + ')');
     }
-    console.log('[Cron] VOLD:', voldNow, '(' + ms + ')');
   }
 
   let vv = null;
@@ -240,9 +331,11 @@ async function cronMarket() {
     vix:       vixNow  != null ? parseFloat(vixNow.toFixed(2))  : state.market.vix,
     vvix:      vvixNow != null ? parseFloat(vvixNow.toFixed(2)) : state.market.vvix,
     vv:        vv      != null ? vv                             : state.market.vv,
-    vold:      voldNow != null ? Math.round(voldNow)            : state.market.vold,
-    uvol:      uvolNow != null ? Math.round(uvolNow)            : state.market.uvol,
-    dvol:      dvolNow != null ? Math.round(dvolNow)            : state.market.dvol,
+    vold:      ms === 'CLOSED' ? null : (voldNow != null ? Math.round(voldNow) : state.market.vold),
+    uvol:      uvolNow != null ? Math.round(uvolNow) : state.market.uvol,
+    dvol:      dvolNow != null ? Math.round(dvolNow) : state.market.dvol,
+    marketState:    ms,
+    nextTradingDay: ms === 'CLOSED' ? getNextTradingDay() : null,
     updatedAt: nowIso,
   };
 
@@ -274,7 +367,10 @@ function computeGreeks(cboeJson) {
   const todayISO   = nowEST().toLocaleDateString('en-CA');
   const todayKey   = todayISO.slice(2,4) + todayISO.slice(5,7) + todayISO.slice(8,10);
 
-  const parsed = allOptions.filter(o => {
+  // 오늘 만기 탐색 → 없으면 다음 거래일 만기 탐색
+  let targetKey = todayKey;
+  let targetISO = todayISO;
+  let parsed = allOptions.filter(o => {
     const m = o.option.trim().match(/(\d{6})[CP]/);
     return m && m[1] === todayKey;
   }).map(o => {
@@ -282,6 +378,24 @@ function computeGreeks(cboeJson) {
     if (!m) return null;
     return { strike: parseInt(m[3]) / 1000, type: m[2], iv: o.iv, oi: o.open_interest, volume: o.volume };
   }).filter(Boolean);
+
+  if (parsed.length === 0) {
+    // 다음 거래일 만기 탐색
+    const nextDay = getNextTradingDay();
+    if (nextDay) {
+      targetISO = nextDay;
+      targetKey = nextDay.slice(2,4) + nextDay.slice(5,7) + nextDay.slice(8,10);
+      parsed = allOptions.filter(o => {
+        const m = o.option.trim().match(/(\d{6})[CP]/);
+        return m && m[1] === targetKey;
+      }).map(o => {
+        const m = o.option.trim().match(/(\d{6})([CP])(\d+)/);
+        if (!m) return null;
+        return { strike: parseInt(m[3]) / 1000, type: m[2], iv: o.iv, oi: o.open_interest, volume: o.volume };
+      }).filter(Boolean);
+      console.log('[Greeks] 오늘 만기 없음 → 다음 거래일', targetISO, '사용');
+    }
+  }
 
   if (parsed.length === 0) throw new Error('NO_0DTE_DATA');
 
@@ -336,7 +450,8 @@ function computeGreeks(cboeJson) {
   const dnStrikes = strikes.filter(s => s.strike < spotPrice && s.strike >= spotPrice * 0.95).sort((a, b) => b.putHedge  - a.putHedge).slice(0, 4);
 
   return {
-    exp: todayISO, spotPrice, strikes, upStrikes, dnStrikes, flipZone, putWall, callWall,
+    exp: targetISO, spotPrice, strikes, upStrikes, dnStrikes, flipZone, putWall, callWall,
+    isNextDay:  targetISO !== todayISO, // 다음 거래일 데이터 여부
     localGEX:  parseFloat((localGEX / 1e6).toFixed(2)),
     totalGEX:  parseFloat((cum / 1e6).toFixed(2)),
     vanna:     parseFloat((totalVanna / 1e6).toFixed(2)),
@@ -405,14 +520,25 @@ async function cronGreeks() {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Cron 스케줄
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// VIX/VOLD: 평일 ET 04~20시만 (장 시간)
 cron.schedule('* 4-20 * * 1-5', async () => {
   try { await cronMarket(); } catch (e) { console.error('[Cron Market]', e.message); }
 }, { timezone: 'America/New_York' });
+// Greeks: 평일 ET 04~20시 15분마다
 cron.schedule('*/15 4-20 * * 1-5', async () => {
   try { await cronGreeks(); } catch (e) { console.error('[Cron Greeks]', e.message); }
 }, { timezone: 'America/New_York' });
+// Greeks: CLOSED 진입 시 (ET 20:00) 다음 거래일 데이터 1회 fetch
+cron.schedule('0 20 * * 1-5', async () => {
+  try { await cronGreeks(); } catch (e) { console.error('[Cron Greeks CLOSED]', e.message); }
+}, { timezone: 'America/New_York' });
+// prevClose: 장 마감 직후 1회
 cron.schedule('5 16 * * 1-5', async () => {
   try { await updatePrevClose(); } catch (e) { console.error('[prevClose]', e.message); }
+}, { timezone: 'America/New_York' });
+// 휴장일 목록: 매일 자정 ET 갱신
+cron.schedule('0 0 * * *', async () => {
+  try { await fetchHolidays(); } catch (e) { console.error('[Holiday]', e.message); }
 }, { timezone: 'America/New_York' });
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -477,10 +603,12 @@ app.get('/api/status', (req, res) => {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 server.listen(PORT, () => {
   console.log('[Server] StockDash v2.0 — port ' + PORT);
-  connectFinnhub();
-  cronMarket().catch(e => console.error('[Init] market:', e.message));
-  setTimeout(() => {
-    cronGreeks().catch(e => console.error('[Init] greeks:', e.message));
-    updatePrevClose().catch(e => console.error('[Init] prevClose:', e.message));
-  }, 3000);
+  fetchHolidays().then(() => {
+    connectFinnhub();
+    cronMarket().catch(e => console.error('[Init] market:', e.message));
+    setTimeout(() => {
+      cronGreeks().catch(e => console.error('[Init] greeks:', e.message));
+      updatePrevClose().catch(e => console.error('[Init] prevClose:', e.message));
+    }, 3000);
+  });
 });

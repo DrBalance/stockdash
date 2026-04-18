@@ -1282,9 +1282,23 @@ function startClock() {
     }) + ' KST';
     const newState = getMarketStateClient();
     if (newState !== window._marketState) {
+      const prevState = window._marketState;
       window._marketState = newState;
       updateMarketStateBadge(newState);
-      console.log('[Clock] 장 상태 변경:', newState);
+      console.log('[Clock] 장 상태 변경:', prevState, '→', newState);
+
+      // CLOSED → PRE 전환: 라이브 모드 복귀
+      if (prevState === 'CLOSED' && newState === 'PRE') {
+        console.log('[Clock] 프리마켓 시작 — 라이브 모드 전환');
+        load0DTE();
+        if (!auto0DTEInterval) {
+          auto0DTEInterval = setInterval(load0DTE, 60000);
+        }
+        connectWS();
+        // 상황판단 메시지 초기화
+        const liveEl = document.getElementById('judgment-live-content-0dte');
+        if (liveEl) liveEl.innerHTML = `<div class="live-event le-good"><span class="le-time">—</span><span class="le-msg">프리마켓 시작 — 실시간 업데이트 중</span></div>`;
+      }
     }
   }
   tick(); // 즉시 1회 실행
@@ -1294,7 +1308,10 @@ function startClock() {
 window.addEventListener('DOMContentLoaded', async () => {
   startClock(); // 가장 먼저 — window._marketState 초기화
   load0DTE();
-  auto0DTEInterval = setInterval(load0DTE, 60000);
+  // CLOSED 시에는 자동갱신 없음 (startClock에서 PRE 전환 시 재시작)
+  if (window._marketState !== 'CLOSED') {
+    auto0DTEInterval = setInterval(load0DTE, 60000);
+  }
   connectWS();
 });
 
@@ -1345,6 +1362,20 @@ function connectWS() {
 function onWSInit({ prices, market }) {
   if (prices) onWSPrices(prices);
   if (market) onWSMarket(market);
+
+  // CLOSED 시 상황판단 메시지 창에 고지
+  const ms = window._marketState || 'REGULAR';
+  if (ms === 'CLOSED') {
+    const sym = document.getElementById('sym-select-0dte')?.value || 'SPY';
+    const nextDay = prices?.[sym]?.nextTradingDay || market?.nextTradingDay || null;
+    const liveEl = document.getElementById('judgment-live-content-0dte');
+    if (liveEl) {
+      const dayStr = nextDay
+        ? ` ${nextDay} 프리마켓 (ET 04:00)`
+        : ' 다음 거래일 프리마켓 (ET 04:00)';
+      liveEl.innerHTML = `<div class="live-event le-info"><span class="le-time">—</span><span class="le-msg">장 마감 — 다음 거래일 데이터입니다.${dayStr} 시작 시 실시간으로 전환됩니다.</span></div>`;
+    }
+  }
 }
 
 // ── prices: Finnhub 거래 발생 시 푸시 ──
@@ -1414,6 +1445,8 @@ function onWSMarket(data) {
   // VOLD
   if (data.vold != null) {
     window._lastVold = data.vold;
+  } else if (window._marketState === 'CLOSED') {
+    window._lastVold = null; // CLOSED 시 — 표시
   }
 
   window._lastVixJson = {
@@ -1613,22 +1646,27 @@ function updateVIXMetrics() {
   const voldValEl   = document.getElementById('metric-obv-val');
   const voldSlopeEl = document.getElementById('metric-obv-slope');
   const vold = window._lastVold ?? null;
-  if (voldValEl && vold != null) {
-    const fmt = v => {
-      const abs = Math.abs(v), sign = v < 0 ? '-' : '+';
-      if (abs >= 1e9) return sign + (abs/1e9).toFixed(2) + 'B';
-      if (abs >= 1e6) return sign + (abs/1e6).toFixed(2) + 'M';
-      if (abs >= 1e3) return sign + (abs/1e3).toFixed(0) + 'K';
-      return String(Math.round(v));
-    };
-    voldValEl.textContent = fmt(vold);
-    if (voldSlopeEl) {
-      const dir = vold > 0 ? '↑ 매수우위' : vold < 0 ? '↓ 매도우위' : '→ 중립';
-      voldSlopeEl.textContent = dir;
-      voldSlopeEl.style.color = vold > 0 ? 'var(--green)' : vold < 0 ? 'var(--red)' : 'var(--text3)';
-    }
-    if (voldCard) {
-      voldCard.className = 'metric ' + (vold > 0 ? 'green' : vold < 0 ? 'red' : '');
+  if (voldValEl) {
+    if (vold != null) {
+      const fmt = v => {
+        const abs = Math.abs(v), sign = v < 0 ? '-' : '+';
+        if (abs >= 1e9) return sign + (abs/1e9).toFixed(2) + 'B';
+        if (abs >= 1e6) return sign + (abs/1e6).toFixed(2) + 'M';
+        if (abs >= 1e3) return sign + (abs/1e3).toFixed(0) + 'K';
+        return String(Math.round(v));
+      };
+      voldValEl.textContent = fmt(vold);
+      if (voldSlopeEl) {
+        const dir = vold > 0 ? '↑ 매수우위' : vold < 0 ? '↓ 매도우위' : '→ 중립';
+        voldSlopeEl.textContent = dir;
+        voldSlopeEl.style.color = vold > 0 ? 'var(--green)' : vold < 0 ? 'var(--red)' : 'var(--text3)';
+      }
+      if (voldCard) voldCard.className = 'metric ' + (vold > 0 ? 'green' : vold < 0 ? 'red' : '');
+    } else {
+      // CLOSED 또는 데이터 없음 — 표시
+      voldValEl.textContent = '—';
+      if (voldSlopeEl) { voldSlopeEl.textContent = ''; }
+      if (voldCard) voldCard.className = 'metric';
     }
   }
 }
@@ -2258,7 +2296,6 @@ function updateVCSignalBar(slice) {
 
   let signalType = 'neutral', msg = '', color = 'var(--text3)';
 
-  const charmPositive = (last.charm ?? 0) < 0;
   const hedgeSignal   = priceDn && Math.abs(voldDelta) < Math.abs(voldCur) * 0.05;
 
   const fmtVold = v => {
@@ -2267,8 +2304,10 @@ function updateVCSignalBar(slice) {
     return sign + abs.toFixed(1) + 'M';
   };
 
-  if (hedgeSignal && charmPositive) {
-    signalType = 'yellow'; msg = '선물 헷지 의심 + Charm 매수 드리프트 대기 → Charm 반등 가능성 주의'; color = 'var(--yellow)';
+  if (hedgeSignal) {
+    signalType = 'yellow'; msg = `지수 하락 + VOLD 플랫/증가 — 옵션 청산/딜러 헷지 매도 의심`; color = 'var(--yellow)';
+  } else if (priceDn && voldDelta > 0) {
+    signalType = 'yellow'; msg = `지수 하락 + VOLD 증가 — 옵션 청산/딜러 헷지 매도 의심`; color = 'var(--yellow)';
   } else if (vv > 0.05 && voldDelta < 0) {
     signalType = 'red'; msg = `VV +${vv.toFixed(3)} · VOLD ↓ ${fmtVold(voldCur)} 수급 이탈 → 실제 하락 압력 확인`; color = 'var(--red)';
   } else if (vv > 0.05 && voldDelta >= 0) {
