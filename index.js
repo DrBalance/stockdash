@@ -405,12 +405,12 @@ async function cronGreeks() {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Cron 스케줄
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-cron.schedule('* * * * *', async () => {
+cron.schedule('* 4-20 * * 1-5', async () => {
   try { await cronMarket(); } catch (e) { console.error('[Cron Market]', e.message); }
-});
-cron.schedule('*/15 * * * *', async () => {
+}, { timezone: 'America/New_York' });
+cron.schedule('*/15 4-20 * * 1-5', async () => {
   try { await cronGreeks(); } catch (e) { console.error('[Cron Greeks]', e.message); }
-});
+}, { timezone: 'America/New_York' });
 cron.schedule('5 16 * * 1-5', async () => {
   try { await updatePrevClose(); } catch (e) { console.error('[prevClose]', e.message); }
 }, { timezone: 'America/New_York' });
