@@ -49,8 +49,9 @@ let lwCandleSeries = null;
 let lwVolChart     = null;   // 거래량 전용 별도 차트 인스턴스
 let lwVolSeries    = null;
 let lwBB = {
-  upper2:null, lower2:null, upper1:null, lower1:null, mid:null,
-  fill2:null, fill1:null,   // 단순화된 음영 (upper AreaSeries 1개씩)
+  upper2:null, lower2:null,   // 2σ 실선
+  upper1:null, lower1:null,   // 1σ 점선 (옅은색)
+  mid:null,                   // SMA20
 };
 
 let chartTabVisible    = false;
@@ -132,11 +133,14 @@ function _resetChart() {
   if (lwChart) {
     lwChart.remove();
     lwChart = null; lwCandleSeries = null;
-    lwBB = { upper2:null, lower2:null, upper1:null, lower1:null, mid:null, fill2:null, fill1:null };
+    lwBB = { upper2:null, lower2:null, upper1:null, lower1:null, mid:null };
   }
   if (lwVolChart) {
     lwVolChart.remove();
     lwVolChart = null; lwVolSeries = null;
+    // vol-wrap DOM 제거
+    const vw = document.getElementById('chart-vol-wrap');
+    if (vw) vw.remove();
   }
 }
 
@@ -332,15 +336,31 @@ function renderLWChart(data) {
 
   // ── 차트 초기화 (최초 1회) ──
   if (!lwChart) {
+
+    // ── 거래량 wrap 먼저 준비 (캔들 차트보다 먼저 DOM에 삽입) ──
+    // wrap의 부모를 flex column 컨테이너로 만들어 캔들/볼 영역을 수직 분리
+    const container = wrap.parentNode;
+    container.style.cssText += 'display:flex;flex-direction:column;';
+    wrap.style.flex = '1 1 auto';
+    wrap.style.minHeight = '400px';
+
+    let volWrap = document.getElementById('chart-vol-wrap');
+    if (!volWrap) {
+      volWrap = document.createElement('div');
+      volWrap.id    = 'chart-vol-wrap';
+      volWrap.style.cssText = 'width:100%;height:110px;flex:0 0 110px;background:#131722;border-top:1px solid #2a2e39;box-sizing:border-box;';
+      container.appendChild(volWrap);
+    }
+
     // ── 메인 차트 (캔들 + 볼린저밴드) ──
     lwChart = LightweightCharts.createChart(wrap, {
       width:  wrap.clientWidth,
-      height: 480,
+      height: wrap.clientHeight || 480,
       layout:   { background:{ color:'#131722' }, textColor:'#b2b5be' },
       grid:     { vertLines:{ color:'#1e222d' }, horzLines:{ color:'#1e222d' } },
       crosshair:{ mode: LightweightCharts.CrosshairMode.Normal },
       rightPriceScale: { borderColor:'#2a2e39', autoScale: true },
-      timeScale:        { borderColor:'#2a2e39', timeVisible:true, secondsVisible:false, borderVisible: true },
+      timeScale: { borderColor:'#2a2e39', timeVisible:true, secondsVisible:false },
     });
 
     // 캔들
@@ -350,73 +370,34 @@ function renderLWChart(data) {
       wickUpColor:colors.upColor, wickDownColor:colors.downColor,
     });
 
-    // 볼린저밴드 라인 옵션 헬퍼
-    const bbLineOpts = (color, lw=1) => ({
+    // 볼린저밴드 라인 헬퍼
+    const bbLine = (color, lw, opts={}) => ({
       color, lineWidth:lw,
       priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false,
+      ...opts,
     });
 
-    // ±2σ 음영 (upper에서 아래로 채움, lower가 경계) — 배경 덮기 트릭 없이 단순 Area
-    // upper2 AreaSeries: upper2 값에서 시작해 lower2 값까지 채움
-    // LW Charts AreaSeries는 "value → 0" 방향으로만 채우므로
-    // upper2를 topLine, lower2를 baseLine 역할로 쓰려면 두 시리즈를 겹침
-    // 실제로는 upper2 AreaSeries(연파랑) 위에 lower2 AreaSeries(배경색 아님, 투명)를 쌓는 대신
-    // upper2 Area를 낮은 opacity, lower2 Area를 배경색과 동일하게 — 이 방식은 pane 분리 후에도
-    // 캔들 pane 안에서만 동작하므로 거래량 pane을 침범하지 않음
-    lwBB.fill2 = lwChart.addAreaSeries({
-      topColor:    _hex2rgba(colors.bb2, 0.12),
-      bottomColor: _hex2rgba(colors.bb2, 0.12),
-      lineColor: 'transparent', lineWidth: 0,
-      priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false,
-    });
-    // lower2 덮개: 캔들 pane 내부에서만 lower2 이하를 배경색으로 채움
-    lwBB.fill2mask = lwChart.addAreaSeries({
-      topColor:    '#131722',
-      bottomColor: '#131722',
-      lineColor: 'transparent', lineWidth: 0,
-      priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false,
-    });
-    // ±1σ 음영
-    lwBB.fill1 = lwChart.addAreaSeries({
-      topColor:    _hex2rgba(colors.bb1, 0.20),
-      bottomColor: _hex2rgba(colors.bb1, 0.20),
-      lineColor: 'transparent', lineWidth: 0,
-      priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false,
-    });
-    lwBB.fill1mask = lwChart.addAreaSeries({
-      topColor:    '#131722',
-      bottomColor: '#131722',
-      lineColor: 'transparent', lineWidth: 0,
-      priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false,
-    });
+    // 2σ — 실선, 명확한 색
+    lwBB.upper2 = lwChart.addLineSeries(bbLine(colors.bb2, 1));
+    lwBB.lower2 = lwChart.addLineSeries(bbLine(colors.bb2, 1));
 
-    // 2σ 외곽선
-    lwBB.upper2 = lwChart.addLineSeries({ ...bbLineOpts(colors.bb2), title:'' });
-    lwBB.lower2 = lwChart.addLineSeries({ ...bbLineOpts(colors.bb2), title:'' });
-    // 1σ 보조선 (반투명)
-    lwBB.upper1 = lwChart.addLineSeries({ ...bbLineOpts(_hex2rgba(colors.bb1, 0.6)), title:'' });
-    lwBB.lower1 = lwChart.addLineSeries({ ...bbLineOpts(_hex2rgba(colors.bb1, 0.6)), title:'' });
-    // 중간선 (SMA20)
-    lwBB.mid    = lwChart.addLineSeries({ ...bbLineOpts(colors.bbMid, 1.5), title:'' });
+    // 1σ — 점선 스타일, 옅은 색 (LineStyle.Dashed = 1)
+    const dash1Color = _hex2rgba(colors.bb1, 0.45);
+    lwBB.upper1 = lwChart.addLineSeries(bbLine(dash1Color, 1, { lineStyle: 1 }));
+    lwBB.lower1 = lwChart.addLineSeries(bbLine(dash1Color, 1, { lineStyle: 1 }));
 
-    // ── 거래량 차트 (완전 별도 DOM 요소) ──
-    // wrap 아래에 vol-wrap이 없으면 동적으로 생성
-    let volWrap = document.getElementById('chart-vol-wrap');
-    if (!volWrap) {
-      volWrap = document.createElement('div');
-      volWrap.id = 'chart-vol-wrap';
-      volWrap.style.cssText = 'width:100%;height:110px;background:#131722;border-top:1px solid #1e222d;';
-      wrap.parentNode.insertBefore(volWrap, wrap.nextSibling);
-    }
+    // 중간선 SMA20 — 실선, 중간 두께
+    lwBB.mid = lwChart.addLineSeries(bbLine(colors.bbMid, 1.5));
 
+    // ── 거래량 차트 (별도 인스턴스) ──
     lwVolChart = LightweightCharts.createChart(volWrap, {
-      width:  volWrap.clientWidth,
+      width:  volWrap.clientWidth || wrap.clientWidth,
       height: 110,
-      layout:   { background:{ color:'#131722' }, textColor:'#b2b5be' },
+      layout:   { background:{ color:'#131722' }, textColor:'#6b7280' },
       grid:     { vertLines:{ color:'#1e222d' }, horzLines:{ color:'#1e222d' } },
       crosshair:{ mode: LightweightCharts.CrosshairMode.Normal },
-      rightPriceScale: { borderColor:'#2a2e39', scaleMargins:{ top:0.1, bottom:0 } },
-      timeScale:        { borderColor:'#2a2e39', timeVisible:true, secondsVisible:false, visible:false },
+      rightPriceScale: { borderColor:'#2a2e39', scaleMargins:{ top:0.1, bottom:0.02 }, autoScale:true },
+      timeScale: { borderColor:'#2a2e39', timeVisible:true, secondsVisible:false, visible:false },
       handleScroll: false,
       handleScale:  false,
     });
@@ -427,16 +408,23 @@ function renderLWChart(data) {
     });
 
     // 두 차트 timeScale 동기화
+    let _syncing = false;
     lwChart.timeScale().subscribeVisibleLogicalRangeChange(range => {
-      if (range && lwVolChart) lwVolChart.timeScale().setVisibleLogicalRange(range);
+      if (_syncing || !range || !lwVolChart) return;
+      _syncing = true;
+      lwVolChart.timeScale().setVisibleLogicalRange(range);
+      _syncing = false;
     });
     lwVolChart.timeScale().subscribeVisibleLogicalRangeChange(range => {
-      if (range && lwChart) lwChart.timeScale().setVisibleLogicalRange(range);
+      if (_syncing || !range || !lwChart) return;
+      _syncing = true;
+      lwChart.timeScale().setVisibleLogicalRange(range);
+      _syncing = false;
     });
 
-    // ResizeObserver — 두 차트 동시 리사이즈
+    // ResizeObserver
     new ResizeObserver(() => {
-      if (lwChart   && wrap.clientWidth    > 0) lwChart.applyOptions({ width: wrap.clientWidth });
+      if (lwChart   && wrap.clientWidth > 0)    lwChart.applyOptions({ width: wrap.clientWidth });
       const vw = document.getElementById('chart-vol-wrap');
       if (lwVolChart && vw && vw.clientWidth > 0) lwVolChart.applyOptions({ width: vw.clientWidth });
     }).observe(wrap);
@@ -450,12 +438,10 @@ function renderLWChart(data) {
     });
     lwBB.upper2?.applyOptions({ color: colors.bb2 });
     lwBB.lower2?.applyOptions({ color: colors.bb2 });
-    lwBB.upper1?.applyOptions({ color: _hex2rgba(colors.bb1, 0.6) });
-    lwBB.lower1?.applyOptions({ color: _hex2rgba(colors.bb1, 0.6) });
+    const dash1Color = _hex2rgba(colors.bb1, 0.45);
+    lwBB.upper1?.applyOptions({ color: dash1Color });
+    lwBB.lower1?.applyOptions({ color: dash1Color });
     lwBB.mid?.applyOptions({ color: colors.bbMid });
-    lwBB.fill2?.applyOptions({ topColor:_hex2rgba(colors.bb2,0.12), bottomColor:_hex2rgba(colors.bb2,0.12) });
-    lwBB.fill1?.applyOptions({ topColor:_hex2rgba(colors.bb1,0.20), bottomColor:_hex2rgba(colors.bb1,0.20) });
-    // mask는 항상 배경색 고정이므로 색상 갱신 불필요
     lwChart.applyOptions({ width: wrap.clientWidth });
   }
 
@@ -469,7 +455,7 @@ function renderLWChart(data) {
     color: c.close >= c.open ? _hex2rgba(colors.upColor,0.40) : _hex2rgba(colors.downColor,0.40),
   })));
 
-  // 볼린저밴드 (null 필터링)
+  // 볼린저밴드 선만 (null 필터링)
   const bbFilter = (key) => candles.filter(c => c[key] != null).map(c => ({ time:c.time, value:c[key] }));
   lwBB.upper2.setData(bbFilter('bbUpper2'));
   lwBB.lower2.setData(bbFilter('bbLower2'));
@@ -477,19 +463,11 @@ function renderLWChart(data) {
   lwBB.lower1.setData(bbFilter('bbLower1'));
   lwBB.mid.setData(bbFilter('bbMid'));
 
-  // 음영: fill2(upper2 → 아래), fill2mask(lower2 → 아래, 배경색으로 덮기)
-  // — 이제 캔들 pane에만 존재하므로 거래량 pane 침범 없음
-  lwBB.fill2?.setData(bbFilter('bbUpper2'));
-  lwBB.fill2mask?.setData(bbFilter('bbLower2'));
-  lwBB.fill1?.setData(bbFilter('bbUpper1'));
-  lwBB.fill1mask?.setData(bbFilter('bbLower1'));
-
-  // 두 차트 타임스케일 동기화 후 맞춤
+  // 두 차트 타임스케일 맞춤
   lwChart.timeScale().fitContent();
   setTimeout(() => {
-    if (lwVolChart) lwVolChart.timeScale().setVisibleLogicalRange(
-      lwChart.timeScale().getVisibleLogicalRange()
-    );
+    const range = lwChart.timeScale().getVisibleLogicalRange();
+    if (lwVolChart && range) lwVolChart.timeScale().setVisibleLogicalRange(range);
     lwCandleSeries?.priceScale()?.applyOptions({ autoScale: true });
   }, 50);
 
@@ -547,13 +525,15 @@ function _hex2rgba(hex, alpha) {
 // § 10. 확대/축소 버튼
 // ══════════════════════════════════════════════════════════
 function chartZoom(dir) {
+  // dir: +1 = 더 넓은 기간(줌아웃), -1 = 더 짧은 기간(줌인)
+  // HTML에서 +버튼 → chartZoom(1), -버튼 → chartZoom(-1)
   if (!lwChart) return;
   const ts    = lwChart.timeScale();
   const range = ts.getVisibleLogicalRange();
   if (!range) return;
   const len  = range.to - range.from;
-  const step = len * 0.2 * (-dir);
-  const newRange = { from: range.from + step, to: range.to - step };
+  const step = len * 0.2 * dir;  // dir>0 → 범위 확장(더 넓은 기간), dir<0 → 범위 축소
+  const newRange = { from: range.from - step, to: range.to + step };
   ts.setVisibleLogicalRange(newRange);
   if (lwVolChart) lwVolChart.timeScale().setVisibleLogicalRange(newRange);
 }
@@ -637,11 +617,9 @@ function previewColors() {
   });
   lwBB.upper2?.applyOptions({ color: c.bb2 });
   lwBB.lower2?.applyOptions({ color: c.bb2 });
-  lwBB.upper1?.applyOptions({ color: _hex2rgba(c.bb1, 0.6) });
-  lwBB.lower1?.applyOptions({ color: _hex2rgba(c.bb1, 0.6) });
+  lwBB.upper1?.applyOptions({ color: _hex2rgba(c.bb1, 0.45) });
+  lwBB.lower1?.applyOptions({ color: _hex2rgba(c.bb1, 0.45) });
   lwBB.mid?.applyOptions({ color: c.bbMid });
-  lwBB.fill2?.applyOptions({ topColor:_hex2rgba(c.bb2,0.12), bottomColor:_hex2rgba(c.bb2,0.12) });
-  lwBB.fill1?.applyOptions({ topColor:_hex2rgba(c.bb1,0.20), bottomColor:_hex2rgba(c.bb1,0.20) });
 }
 
 function _readPickerColors() {
