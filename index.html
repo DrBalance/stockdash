@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>딜러 리스크 대시보드 v7.2</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -218,6 +219,11 @@ tr.flip td{background:rgba(240,136,62,.06)}
 .tab-btn .tab-badge{display:inline-block;font-size:10px;font-weight:700;padding:1px 5px;border-radius:3px;margin-left:6px;background:rgba(63,185,80,.15);color:var(--green);vertical-align:middle}
 .tab-btn.active .tab-badge{background:rgba(88,166,255,.15);color:var(--blue)}
 @keyframes spin{to{transform:rotate(360deg)}}
+
+.chart-itv-btn{font-size:12px;padding:5px 10px;border-radius:5px;border:1px solid var(--border);
+  background:var(--bg3);color:var(--text3);cursor:pointer;font-family:var(--font);transition:all .15s}
+.chart-itv-btn:hover{color:var(--text2);border-color:var(--text3)}
+.chart-itv-btn.active{background:var(--blue-dim);color:var(--blue);border-color:var(--blue-dim)}
 </style>
 </head>
 <body>
@@ -263,6 +269,9 @@ tr.flip td{background:rgba(240,136,62,.06)}
   </button>
   <button class="tab-btn" id="tab-screener" onclick="switchTab('screener')">
     📡 스크리너
+  </button>
+  <button class="tab-btn" id="tab-chart" onclick="switchTab('chart')">
+    📈 차트
   </button>
 </div>
 
@@ -311,7 +320,73 @@ tr.flip td{background:rgba(240,136,62,.06)}
 <!-- 날짜 조회 영역 -->
 
 <!-- 스크리너 영역 -->
-<div id="area-screener" style="display:none">
+<div id="area-chart" style="display:none">
+  <div class="main">
+    <div class="card" style="padding:20px 24px">
+
+      <!-- 심볼 검색 + 시간단위 컨트롤 -->
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:18px">
+        <div style="position:relative;flex:0 0 auto">
+          <input id="chart-sym-input" type="text" placeholder="심볼 입력 (예: AAPL)"
+            style="background:var(--bg3);color:var(--text);border:1px solid var(--border);
+                   border-radius:6px;padding:7px 12px;font-size:14px;width:180px;
+                   font-family:var(--mono);text-transform:uppercase;outline:none"
+            oninput="onChartSymInput(this.value)"
+            onkeydown="onChartSymKeydown(event)"
+            autocomplete="off" spellcheck="false">
+          <div id="chart-sym-dropdown"
+            style="display:none;position:absolute;top:100%;left:0;z-index:200;
+                   background:var(--bg2);border:1px solid var(--border);border-radius:6px;
+                   width:280px;max-height:220px;overflow-y:auto;box-shadow:0 8px 24px rgba(0,0,0,.4);margin-top:3px">
+          </div>
+        </div>
+        <button onclick="loadChart()"
+          style="background:var(--blue-dim);color:var(--blue);border:1px solid var(--blue-dim);
+                 border-radius:6px;padding:7px 18px;font-size:14px;font-weight:600;cursor:pointer;font-family:var(--font)">
+          조회
+        </button>
+        <!-- 시간단위 버튼 -->
+        <div style="display:flex;gap:4px;margin-left:8px" id="chart-interval-btns">
+          <button class="chart-itv-btn active" data-itv="1m"  data-range="1d"  onclick="setChartInterval(this)">1분</button>
+          <button class="chart-itv-btn"        data-itv="5m"  data-range="1d"  onclick="setChartInterval(this)">5분</button>
+          <button class="chart-itv-btn"        data-itv="15m" data-range="5d"  onclick="setChartInterval(this)">15분</button>
+          <button class="chart-itv-btn"        data-itv="1h"  data-range="1mo" onclick="setChartInterval(this)">1시간</button>
+          <button class="chart-itv-btn"        data-itv="1d"  data-range="1y"  onclick="setChartInterval(this)">일봉</button>
+        </div>
+        <div style="margin-left:auto;display:flex;align-items:center;gap:10px">
+          <div id="chart-status-badge"
+            style="font-size:12px;color:var(--text3);font-family:var(--mono)">—</div>
+          <div id="chart-price-display"
+            style="font-size:20px;font-weight:700;font-family:var(--mono);color:var(--text)">—</div>
+          <div id="chart-change-display"
+            style="font-size:13px;font-family:var(--mono)">—</div>
+        </div>
+      </div>
+
+      <!-- Lightweight Charts 캔들차트 -->
+      <div id="chart-lw-wrap" style="position:relative;height:420px;background:var(--bg);border-radius:6px;border:1px solid var(--border)">
+        <div id="chart-empty" style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text3);font-size:14px;flex-direction:column;gap:10px">
+          <div style="font-size:32px;opacity:.3">📈</div>
+          <div>심볼을 입력하고 조회하세요</div>
+        </div>
+      </div>
+
+      <!-- 거래량 차트 -->
+      <div id="chart-vol-wrap" style="position:relative;height:100px;background:var(--bg);border-radius:6px;border:1px solid var(--border);margin-top:4px;display:none">
+      </div>
+
+      <!-- 하단 정보 -->
+      <div id="chart-info-bar"
+        style="display:none;margin-top:12px;padding:10px 14px;background:var(--bg3);
+               border-radius:6px;border:1px solid var(--border);font-size:12px;
+               color:var(--text3);display:flex;gap:20px;flex-wrap:wrap">
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- 스크리너 영역 -->
   <div class="main">
     <div class="card" style="padding:20px 24px">
 
@@ -404,7 +479,7 @@ let dateAllOptions = [];
 // ── 탭 전환 ──
 function switchTab(tab) {
   // 탭 버튼 상태 업데이트
-  ['0dte','date','screener'].forEach(t => {
+  ['0dte','date','screener','chart'].forEach(t => {
     const el = document.getElementById('tab-' + t);
     if (el) el.className = 'tab-btn' + (t === tab ? ' active' : '');
   });
@@ -417,13 +492,23 @@ function switchTab(tab) {
   const area0 = document.getElementById('area-0dte');
   const areaD = document.getElementById('area-date');
   const areaS = document.getElementById('area-screener');
+  const areaC = document.getElementById('area-chart');
   if (area0) area0.style.display = tab === '0dte'     ? '' : 'none';
   if (areaD) areaD.style.display = tab === 'date'     ? '' : 'none';
   if (areaS) areaS.style.display = tab === 'screener' ? '' : 'none';
+  if (areaC) areaC.style.display = tab === 'chart'    ? '' : 'none';
   // 날짜 탭 최초 진입 시 만기 목록 로드
-  if (tab === 'date' && !allOptions.length) loadExpirations();
+  if (tab === 'date' && !dateAllOptions.length) loadExpirations();
   // 스크리너 탭 최초 진입 시 데이터 로드
   if (tab === 'screener') { loadBollinger(); loadScreener(); }
+  // 차트 탭 진입
+  if (tab === 'chart') {
+    chartTabVisible = true;
+    initChartSymbols();
+    if (chartPendingUpdate) { chartPendingUpdate = false; renderLWChart(); }
+  } else {
+    chartTabVisible = false;
+  }
   // 탭 복귀 시 GEX 차트 복원
   if (tab === '0dte' && currentD) {
     requestAnimationFrame(() => {
@@ -3102,6 +3187,380 @@ function updateZoom(val){
   if(!currentD) return;
   const chartData=currentStrikes.filter(s=>Math.abs(s.strike-currentD.spotPrice)/currentD.spotPrice<0.08);
   buildChart(chartData,currentD.spotPrice,currentD.flipZone,currentD.putWall,currentD.callWall, zsfx);
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 📈 차트 탭 — Lightweight Charts 캔들 + 거래량
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+// ── 전역 변수 ──
+let lwChart         = null;   // LightweightCharts 인스턴스
+let lwCandleSeries  = null;   // 캔들 시리즈
+let lwVolSeries     = null;   // 거래량 히스토그램 시리즈
+let chartCurrentSym   = '';
+let chartCurrentItv   = '1m';
+let chartCurrentRange = '1d';
+let chartTabVisible   = false;
+let chartPendingUpdate = false;
+let chartPollTimer    = null;  // 장중 30초 폴링 setInterval ID
+let chartSymbols      = [];    // 서버에서 받은 심볼 목록
+let chartDropdownIdx  = -1;    // 키보드 탐색 인덱스
+window._chartPendingData = null; // 백그라운드 업데이트 대기 데이터
+
+// ── 1. 심볼 목록 초기 fetch (1회) ──
+let _chartSymFetched = false;
+async function initChartSymbols() {
+  if (_chartSymFetched) return;
+  _chartSymFetched = true;
+  try {
+    const res  = await fetch(API_BASE + '/api/symbols?q=');
+    const data = await res.json();
+    chartSymbols = Array.isArray(data) ? data : (data.symbols || []);
+  } catch(e) {
+    console.warn('[Chart] 심볼 목록 fetch 실패:', e);
+    chartSymbols = [];
+  }
+}
+
+// ── 2. 자동완성 드롭다운 ──
+function onChartSymInput(val) {
+  const q   = val.trim().toUpperCase();
+  const dd  = document.getElementById('chart-sym-dropdown');
+  if (!dd) return;
+  chartDropdownIdx = -1;
+
+  if (!q || q.length < 1) { dd.style.display = 'none'; return; }
+
+  // 서버 심볼 목록 로컬 필터 (최대 8개)
+  const matches = chartSymbols
+    .filter(s => s.symbol && s.symbol.startsWith(q))
+    .slice(0, 8);
+
+  // 서버 목록 아직 없으면 서버에 직접 쿼리
+  if (chartSymbols.length === 0) {
+    _fetchSymbolsRemote(q).then(list => {
+      chartSymbols = list;
+      _renderDropdown(list.slice(0, 8));
+    });
+    return;
+  }
+
+  _renderDropdown(matches);
+}
+
+async function _fetchSymbolsRemote(q) {
+  try {
+    const res  = await fetch(API_BASE + '/api/symbols?q=' + encodeURIComponent(q));
+    const data = await res.json();
+    return Array.isArray(data) ? data : (data.symbols || []);
+  } catch { return []; }
+}
+
+function _renderDropdown(list) {
+  const dd  = document.getElementById('chart-sym-dropdown');
+  const inp = document.getElementById('chart-sym-input');
+  if (!dd) return;
+
+  if (!list.length) { dd.style.display = 'none'; return; }
+
+  dd.innerHTML = list.map((item, i) => {
+    const sym  = item.symbol || item;
+    const desc = item.description || '';
+    return `<div class="_chart-dd-item"
+      style="padding:8px 12px;cursor:pointer;border-bottom:1px solid var(--border);
+             display:flex;flex-direction:column;gap:2px;transition:background .1s"
+      data-sym="${sym}"
+      onmouseenter="this.style.background='var(--bg3)'"
+      onmouseleave="this.style.background=''"
+      onclick="selectChartSym('${sym}')">
+      <span style="font-size:13px;font-weight:700;font-family:var(--mono);color:var(--text)">${sym}</span>
+      ${desc ? `<span style="font-size:11px;color:var(--text3)">${desc}</span>` : ''}
+    </div>`;
+  }).join('');
+
+  dd.style.display = 'block';
+}
+
+// ── 3. 키보드 탐색 ──
+function highlightDropdown() {
+  const items = document.querySelectorAll('._chart-dd-item');
+  items.forEach((el, i) => {
+    el.style.background = i === chartDropdownIdx ? 'var(--bg3)' : '';
+  });
+}
+
+function onChartSymKeydown(e) {
+  const dd    = document.getElementById('chart-sym-dropdown');
+  const items = document.querySelectorAll('._chart-dd-item');
+  const n     = items.length;
+
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    chartDropdownIdx = Math.min(chartDropdownIdx + 1, n - 1);
+    highlightDropdown();
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    chartDropdownIdx = Math.max(chartDropdownIdx - 1, 0);
+    highlightDropdown();
+  } else if (e.key === 'Enter') {
+    e.preventDefault();
+    if (chartDropdownIdx >= 0 && items[chartDropdownIdx]) {
+      selectChartSym(items[chartDropdownIdx].dataset.sym);
+    } else {
+      // 드롭다운 없이 Enter → 그냥 조회
+      if (dd) dd.style.display = 'none';
+      loadChart();
+    }
+  } else if (e.key === 'Escape') {
+    if (dd) dd.style.display = 'none';
+    chartDropdownIdx = -1;
+  }
+}
+
+// ── 4. 드롭다운 항목 선택 ──
+function selectChartSym(sym) {
+  const inp = document.getElementById('chart-sym-input');
+  const dd  = document.getElementById('chart-sym-dropdown');
+  if (inp) inp.value = sym;
+  if (dd)  dd.style.display = 'none';
+  chartDropdownIdx = -1;
+  loadChart();
+}
+
+// ── 5. 시간단위 버튼 전환 ──
+function setChartInterval(btn) {
+  document.querySelectorAll('.chart-itv-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  chartCurrentItv   = btn.dataset.itv   || '1m';
+  chartCurrentRange = btn.dataset.range  || '1d';
+  if (chartCurrentSym) loadChart();
+}
+
+// ── 6. 메인 로드 함수 ──
+async function loadChart() {
+  const inp = document.getElementById('chart-sym-input');
+  const sym = (inp ? inp.value.trim().toUpperCase() : '') || chartCurrentSym;
+  if (!sym) return;
+
+  // 심볼 변경 시 폴링 초기화
+  if (sym !== chartCurrentSym) {
+    chartCurrentSym = sym;
+    _stopChartPoll();
+  }
+
+  await fetchAndRenderChart(false);
+
+  // 장 중이면 30초 폴링 시작
+  const ms = window._marketState || getMarketStateClient();
+  if (ms !== 'CLOSED') {
+    _stopChartPoll();
+    chartPollTimer = setInterval(() => fetchAndRenderChart(true), 30000);
+  }
+}
+
+function _stopChartPoll() {
+  if (chartPollTimer) { clearInterval(chartPollTimer); chartPollTimer = null; }
+}
+
+// ── 7. fetch + 렌더 (폴링마다 호출) ──
+async function fetchAndRenderChart(silent) {
+  if (!chartCurrentSym) return;
+
+  // 로딩 표시 (silent 아닐 때만)
+  if (!silent) {
+    const empty = document.getElementById('chart-empty');
+    if (empty) {
+      empty.style.display = 'flex';
+      empty.innerHTML = `
+        <div class="spinner"></div>
+        <div style="font-size:13px;color:var(--text3)">
+          ${chartCurrentSym} ${chartCurrentItv} 데이터 로딩 중...
+        </div>`;
+    }
+  }
+
+  try {
+    const url = `${API_BASE}/api/chart?symbol=${encodeURIComponent(chartCurrentSym)}&interval=${chartCurrentItv}&range=${chartCurrentRange}`;
+    const res  = await fetch(url);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+
+    // 탭 안 보이면 → 메모리에 저장 후 복귀 시 렌더
+    if (!chartTabVisible) {
+      window._chartPendingData = data;
+      chartPendingUpdate = true;
+      return;
+    }
+
+    renderLWChart(data);
+  } catch(e) {
+    console.error('[Chart] fetch 실패:', e);
+    if (!silent) {
+      const empty = document.getElementById('chart-empty');
+      if (empty) {
+        empty.style.display = 'flex';
+        empty.innerHTML = `
+          <div style="font-size:28px;opacity:.4">⚠️</div>
+          <div style="font-size:13px;color:var(--red)">데이터 로드 실패: ${e.message}</div>`;
+      }
+    }
+  }
+}
+
+// ── 8. Lightweight Charts 실제 렌더 ──
+function renderLWChart(data) {
+  // 백그라운드 대기 데이터 사용 (인수 없이 호출 시)
+  if (!data) {
+    data = window._chartPendingData;
+    window._chartPendingData = null;
+  }
+  if (!data || !data.quotes || !data.quotes.length) return;
+
+  const wrap  = document.getElementById('chart-lw-wrap');
+  const empty = document.getElementById('chart-empty');
+  if (!wrap) return;
+
+  // empty 패널 숨기기
+  if (empty) empty.style.display = 'none';
+
+  // ── LW Chart 초기화 (재사용 or 신규 생성) ──
+  if (!lwChart) {
+    lwChart = LightweightCharts.createChart(wrap, {
+      width:  wrap.clientWidth,
+      height: 420,
+      layout: {
+        background: { color: '#0d1117' },
+        textColor:  '#8b949e',
+      },
+      grid: {
+        vertLines:  { color: '#21262d' },
+        horzLines:  { color: '#21262d' },
+      },
+      crosshair: {
+        mode: LightweightCharts.CrosshairMode.Normal,
+      },
+      rightPriceScale: {
+        borderColor: '#30363d',
+      },
+      timeScale: {
+        borderColor:     '#30363d',
+        timeVisible:     true,
+        secondsVisible:  false,
+      },
+    });
+
+    // 캔들 시리즈
+    lwCandleSeries = lwChart.addCandlestickSeries({
+      upColor:          '#3fb950',
+      downColor:        '#f85149',
+      borderUpColor:    '#3fb950',
+      borderDownColor:  '#f85149',
+      wickUpColor:      '#3fb950',
+      wickDownColor:    '#f85149',
+    });
+
+    // 거래량 히스토그램 (메인 차트 하단 20%)
+    lwVolSeries = lwChart.addHistogramSeries({
+      priceFormat:    { type: 'volume' },
+      priceScaleId:   'vol',
+      scaleMargins:   { top: 0.8, bottom: 0 },
+      color:          'rgba(63,185,80,0.3)',
+    });
+
+    // 반응형: wrap 크기 변경 시 chart width 조정
+    const _ro = new ResizeObserver(() => {
+      if (lwChart && wrap.clientWidth > 0) {
+        lwChart.applyOptions({ width: wrap.clientWidth });
+      }
+    });
+    _ro.observe(wrap);
+
+  } else {
+    // 기존 차트 재사용 — 크기 맞추기
+    lwChart.applyOptions({ width: wrap.clientWidth });
+  }
+
+  // ── 데이터 변환 ──
+  const quotes = data.quotes;
+
+  const candleData = quotes.map(q => ({
+    time:  q.time,
+    open:  q.open,
+    high:  q.high,
+    low:   q.low,
+    close: q.close,
+  }));
+
+  const volData = quotes.map(q => ({
+    time:  q.time,
+    value: q.volume || 0,
+    color: q.close >= q.open
+      ? 'rgba(63,185,80,0.3)'
+      : 'rgba(248,81,73,0.3)',
+  }));
+
+  lwCandleSeries.setData(candleData);
+  lwVolSeries.setData(volData);
+
+  // 최신봉으로 스크롤
+  lwChart.timeScale().scrollToRealTime();
+
+  // ── 상단 가격 표시 업데이트 ──
+  const last    = quotes[quotes.length - 1];
+  const first   = quotes[0];
+  const change  = last.close - first.open;
+  const changePct = (change / first.open) * 100;
+
+  const priceEl  = document.getElementById('chart-price-display');
+  const changeEl = document.getElementById('chart-change-display');
+  const badgeEl  = document.getElementById('chart-status-badge');
+
+  if (priceEl) {
+    priceEl.textContent = '$' + last.close.toFixed(2);
+  }
+  if (changeEl) {
+    const sign   = change >= 0 ? '+' : '';
+    changeEl.textContent  = `${sign}${change.toFixed(2)} (${sign}${changePct.toFixed(2)}%)`;
+    changeEl.style.color  = change >= 0 ? 'var(--green)' : 'var(--red)';
+  }
+  if (badgeEl) {
+    const ms     = window._marketState || getMarketStateClient();
+    const msMap  = { REGULAR:'정규장', PRE:'프리마켓', AFTER:'애프터', CLOSED:'장마감' };
+    badgeEl.textContent = `${chartCurrentSym} · ${msMap[ms] || ms}`;
+    badgeEl.style.color = ms === 'REGULAR' ? 'var(--green)' : 'var(--text3)';
+  }
+
+  // ── 하단 정보 바 ──
+  _updateChartInfoBar(quotes, data);
+}
+
+function _updateChartInfoBar(quotes, data) {
+  const bar = document.getElementById('chart-info-bar');
+  if (!bar) return;
+
+  const last = quotes[quotes.length - 1];
+  const vols = quotes.map(q => q.volume || 0);
+  const avgVol = vols.length
+    ? Math.round(vols.reduce((a, b) => a + b, 0) / vols.length)
+    : 0;
+
+  const fmt = v => v >= 1e6 ? (v/1e6).toFixed(2)+'M'
+                 : v >= 1e3 ? (v/1e3).toFixed(1)+'K'
+                 : String(v);
+
+  bar.style.display = 'flex';
+  bar.innerHTML = [
+    `<span>심볼: <b style="color:var(--text)">${chartCurrentSym}</b></span>`,
+    `<span>단위: <b style="color:var(--text)">${chartCurrentItv}</b></span>`,
+    `<span>고가: <b style="color:var(--green)">$${Math.max(...quotes.map(q=>q.high)).toFixed(2)}</b></span>`,
+    `<span>저가: <b style="color:var(--red)">$${Math.min(...quotes.map(q=>q.low)).toFixed(2)}</b></span>`,
+    `<span>거래량(최종): <b style="color:var(--text)">${fmt(last.volume||0)}</b></span>`,
+    `<span>평균거래량: <b style="color:var(--text)">${fmt(avgVol)}</b></span>`,
+    data.updatedAt
+      ? `<span>업데이트: <b style="color:var(--text3)">${new Date(data.updatedAt*1000).toLocaleTimeString('ko-KR',{timeZone:'America/New_York'})} ET</b></span>`
+      : '',
+  ].filter(Boolean).join('');
 }
 </script>
 </body>
