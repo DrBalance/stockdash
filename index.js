@@ -35,6 +35,8 @@ const state = {
   baseStrikes: {},   // 당일 첫 번째 Cron strikes (누적 기준)
   baseDate:    '',   // 날짜 바뀌면 baseStrikes 리셋
   vcHistory: {}, vcHistoryDate: '',
+  symbols: [],       // 미국 주식 심볼 목록 (매일 자정 갱신)
+  symbolsUpdatedAt: null,
 };
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -560,6 +562,10 @@ cron.schedule('5 16 * * 1-5', async () => {
 cron.schedule('0 0 * * *', async () => {
   try { await fetchHolidays(); } catch (e) { console.error('[Holiday]', e.message); }
 }, { timezone: 'America/New_York' });
+// 심볼 목록: 매일 새벽 1시 ET 갱신
+cron.schedule('0 1 * * *', async () => {
+  try { await fetchSymbols(); } catch (e) { console.error('[Symbols]', e.message); }
+}, { timezone: 'America/New_York' });
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // REST API
@@ -619,9 +625,111 @@ app.get('/api/status', (req, res) => {
     marketUpdatedAt: state.market.updatedAt,
     greeksSymbols:   Object.keys(state.greeks),
     vixHistoryLen:   state.vixHistory.length,
+    symbolsCount:    state.symbols.length,
+    symbolsUpdatedAt: state.symbolsUpdatedAt,
     uptime:          process.uptime(),
     now:             new Date().toISOString(),
   });
+});
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 심볼 목록 (Finnhub + ETF 보강)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+async function fetchSymbols() {
+  try {
+    const r = await fetch(
+      `https://finnhub.io/api/v1/stock/symbol?exchange=US&token=${FINNHUB_TOKEN}`,
+      { signal: AbortSignal.timeout(15000) }
+    );
+    if (!r.ok) throw new Error('Finnhub symbols HTTP ' + r.status);
+    const data = await r.json();
+    // Common Stock + ETF만, 심볼/이름/타입 정리
+    state.symbols = data
+      .filter(s => s.type === 'Common Stock' || s.type === 'ETP')
+      .map(s => ({
+        symbol:      s.symbol,
+        name:        s.description || '',
+        type:        s.type === 'ETP' ? 'ETF' : 'Stock',
+      }))
+      .sort((a, b) => a.symbol.localeCompare(b.symbol));
+    state.symbolsUpdatedAt = new Date().toISOString();
+    console.log('[Symbols] 로드 완료:', state.symbols.length, '개');
+  } catch (e) {
+    console.warn('[Symbols] 실패:', e.message);
+  }
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 차트 데이터 (Yahoo Finance OHLCV)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+async function fetchChartData(symbol, interval, range) {
+  const encoded = encodeURIComponent(symbol);
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encoded}?interval=${interval}&range=${range}`;
+  const r = await fetch(url, {
+    headers: { 'User-Agent': 'Mozilla/5.0' },
+    signal: AbortSignal.timeout(10000),
+  });
+  if (!r.ok) throw new Error('Yahoo chart HTTP ' + r.status);
+  const j = await r.json();
+  const result = j?.chart?.result?.[0];
+  if (!result) throw new Error('No chart data');
+
+  const meta       = result.meta;
+  const timestamps = result.timestamp || [];
+  const quote      = result.indicators?.quote?.[0] || {};
+  const { open, high, low, close, volume } = quote;
+
+  // OHLCV 배열로 변환 (null 캔들 제거)
+  const candles = timestamps.map((t, i) => ({
+    time:   t,           // Unix timestamp (초)
+    open:   open?.[i]   ?? null,
+    high:   high?.[i]   ?? null,
+    low:    low?.[i]    ?? null,
+    close:  close?.[i]  ?? null,
+    volume: volume?.[i] ?? 0,
+  })).filter(c => c.open != null && c.close != null);
+
+  return {
+    symbol,
+    interval,
+    range,
+    currency:    meta.currency || 'USD',
+    currentPrice: meta.regularMarketPrice ?? null,
+    previousClose: meta.chartPreviousClose ?? null,
+    candles,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// REST API — 심볼 & 차트
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 심볼 목록
+app.get('/api/symbols', (req, res) => {
+  const q = (req.query.q || '').toUpperCase().trim();
+  if (!q) return res.json({ count: state.symbols.length, symbols: state.symbols.slice(0, 50) });
+  const matched = state.symbols.filter(s =>
+    s.symbol.startsWith(q) || s.name.toUpperCase().includes(q)
+  ).slice(0, 30);
+  res.json({ count: matched.length, symbols: matched });
+});
+
+// 차트 데이터
+app.get('/api/chart', async (req, res) => {
+  const symbol   = (req.query.symbol || 'SPY').toUpperCase();
+  const interval = req.query.interval || '5m';   // 1m 2m 5m 15m 30m 60m 1d
+  const range    = req.query.range    || '1d';   // 1d 5d 1mo 3mo 6mo 1y
+  // interval/range 유효성 체크
+  const validIntervals = ['1m','2m','5m','15m','30m','60m','90m','1h','1d','1wk','1mo'];
+  const validRanges    = ['1d','5d','1mo','3mo','6mo','1y','2y','5y','ytd','max'];
+  if (!validIntervals.includes(interval)) return res.status(400).json({ error: 'invalid interval' });
+  if (!validRanges.includes(range))       return res.status(400).json({ error: 'invalid range' });
+  try {
+    const data = await fetchChartData(symbol, interval, range);
+    res.json(data);
+  } catch (e) {
+    res.status(500).json({ error: e.message, symbol });
+  }
 });
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -631,6 +739,7 @@ server.listen(PORT, () => {
   console.log('[Server] StockDash v2.0 — port ' + PORT);
   fetchHolidays().then(() => {
     connectFinnhub();
+    fetchSymbols().catch(e => console.error('[Init] symbols:', e.message));
     cronMarket().catch(e => console.error('[Init] market:', e.message));
     setTimeout(() => {
       cronGreeks().catch(e => console.error('[Init] greeks:', e.message));
