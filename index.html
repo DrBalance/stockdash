@@ -491,6 +491,7 @@ tr.flip td{background:rgba(240,136,62,.06)}
 </div>
 
 <!-- 스크리너 영역 -->
+<div id="area-screener" style="display:none">
   <div class="main">
     <div class="card" style="padding:20px 24px">
 
@@ -609,7 +610,14 @@ function switchTab(tab) {
   if (tab === 'chart') {
     chartTabVisible = true;
     initChartSymbols();
-    if (chartPendingUpdate) { chartPendingUpdate = false; renderLWChart(window._chartPendingData); window._chartPendingData = null; } else { const _t = chartActiveTab(); if (_t?.data) renderLWChart(_t.data); }
+    if (chartPendingUpdate) {
+      chartPendingUpdate = false;
+      renderLWChart(window._chartPendingData);
+      window._chartPendingData = null;
+    } else {
+      const _t = chartActiveTab();
+      if (_t?.data) renderLWChart(_t.data);
+    }
   } else {
     chartTabVisible = false;
   }
@@ -2183,11 +2191,13 @@ function renderVCChart() {
   }
 
   if (vcHistory.length === 0) {
-    const bar = document.getElementById('vc-signal-bar');
-    if (bar) {
-      document.getElementById('vc-signal-icon').textContent = '—';
-      document.getElementById('vc-signal-text').textContent = '데이터 누적 중... (KST 17:00(EDT)/18:00(EST) 프리마켓부터 5분 Cron 자동 적재)';
-      document.getElementById('vc-signal-text').style.color = 'var(--text3)';
+    const bar   = document.getElementById('vc-signal-bar');
+    const icon  = document.getElementById('vc-signal-icon');
+    const txtEl = document.getElementById('vc-signal-text');
+    if (bar && icon && txtEl) {
+      icon.textContent  = '—';
+      txtEl.textContent = '데이터 누적 중... (KST 17:00(EDT)/18:00(EST) 프리마켓부터 5분 Cron 자동 적재)';
+      txtEl.style.color = 'var(--text3)';
     }
     return;
   }
@@ -3882,16 +3892,7 @@ function deletePreset(e, name) {
   renderPalettePanel();
 }
 
-// ── 9. initChartSymbols (switchTab에서 호출) ──
-async function initChartSymbols() {
-  if (_chartSymFetchedFlag) return;
-  _chartSymFetchedFlag = true;
-  try {
-    const res  = await fetch(API_BASE + '/api/symbols?q=');
-    const data = await res.json();
-    chartSymbols = data.symbols || (Array.isArray(data) ? data : []);
-  } catch { chartSymbols = []; }
-}
+// ── 9. initChartSymbols는 위쪽에 이미 정의됨 (중복 제거)
 
 </script>
 </body>

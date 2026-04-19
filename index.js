@@ -776,12 +776,17 @@ app.get('/api/chart', async (req, res) => {
   const symbol     = (req.query.symbol || 'SPY').toUpperCase();
   const resolution = req.query.resolution || 'D';
   if (!VALID_RESOLUTIONS.includes(resolution))
-    return res.status(400).json({ error: 'invalid resolution' });
+    return res.status(400).json({ error: 'invalid resolution', valid: VALID_RESOLUTIONS });
+  if (!FINNHUB_TOKEN)
+    return res.status(503).json({ error: 'FINNHUB_TOKEN 환경변수가 설정되지 않았습니다', symbol });
   try {
+    console.log(`[Chart] ${symbol} res=${resolution} 요청`);
     const data = await fetchChartData(symbol, resolution);
+    console.log(`[Chart] ${symbol} res=${resolution} 완료 — candles=${data.candles.length}`);
     res.json(data);
   } catch (e) {
-    res.status(500).json({ error: e.message, symbol });
+    console.error(`[Chart] ${symbol} res=${resolution} 실패:`, e.message);
+    res.status(500).json({ error: e.message, symbol, resolution });
   }
 });
 
