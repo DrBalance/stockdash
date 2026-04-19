@@ -3215,7 +3215,8 @@ async function initChartSymbols() {
   try {
     const res  = await fetch(API_BASE + '/api/symbols?q=');
     const data = await res.json();
-    chartSymbols = Array.isArray(data) ? data : (data.symbols || []);
+    // 서버 응답: { count, symbols: [{symbol, name}, ...] }
+    chartSymbols = data.symbols || (Array.isArray(data) ? data : []);
   } catch(e) {
     console.warn('[Chart] 심볼 목록 fetch 실패:', e);
     chartSymbols = [];
@@ -3252,7 +3253,8 @@ async function _fetchSymbolsRemote(q) {
   try {
     const res  = await fetch(API_BASE + '/api/symbols?q=' + encodeURIComponent(q));
     const data = await res.json();
-    return Array.isArray(data) ? data : (data.symbols || []);
+    // 서버 응답: { count, symbols: [{symbol, name}, ...] }
+    return data.symbols || (Array.isArray(data) ? data : []);
   } catch { return []; }
 }
 
@@ -3265,7 +3267,7 @@ function _renderDropdown(list) {
 
   dd.innerHTML = list.map((item, i) => {
     const sym  = item.symbol || item;
-    const desc = item.description || '';
+    const desc = item.name || item.description || '';  // 서버 필드: name
     return `<div class="_chart-dd-item"
       style="padding:8px 12px;cursor:pointer;border-bottom:1px solid var(--border);
              display:flex;flex-direction:column;gap:2px;transition:background .1s"
@@ -3385,6 +3387,10 @@ async function fetchAndRenderChart(silent) {
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
     if (data.error) throw new Error(data.error);
+
+    // 서버가 candles 키로 반환 → quotes로 정규화
+    if (!data.quotes && data.candles) data.quotes = data.candles;
+    if (!data.quotes || !data.quotes.length) throw new Error('데이터 없음');
 
     // 탭 안 보이면 → 메모리에 저장 후 복귀 시 렌더
     if (!chartTabVisible) {
@@ -3558,7 +3564,7 @@ function _updateChartInfoBar(quotes, data) {
     `<span>거래량(최종): <b style="color:var(--text)">${fmt(last.volume||0)}</b></span>`,
     `<span>평균거래량: <b style="color:var(--text)">${fmt(avgVol)}</b></span>`,
     data.updatedAt
-      ? `<span>업데이트: <b style="color:var(--text3)">${new Date(data.updatedAt*1000).toLocaleTimeString('ko-KR',{timeZone:'America/New_York'})} ET</b></span>`
+      ? `<span>업데이트: <b style="color:var(--text3)">${new Date(data.updatedAt).toLocaleTimeString('ko-KR',{timeZone:'America/New_York'})} ET</b></span>`
       : '',
   ].filter(Boolean).join('');
 }
