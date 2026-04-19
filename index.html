@@ -411,11 +411,11 @@ tr.flip td{background:rgba(240,136,62,.06)}
 
         <!-- 시간단위 버튼 (Finnhub resolution) -->
         <div style="display:flex;gap:4px;margin-left:8px" id="chart-interval-btns">
-          <button class="chart-itv-btn active" data-res="5"   onclick="setChartInterval(this)">5분</button>
+          <button class="chart-itv-btn"        data-res="5"   onclick="setChartInterval(this)">5분</button>
           <button class="chart-itv-btn"        data-res="30"  onclick="setChartInterval(this)">30분</button>
           <button class="chart-itv-btn"        data-res="120" onclick="setChartInterval(this)">2시간</button>
           <button class="chart-itv-btn"        data-res="240" onclick="setChartInterval(this)">4시간</button>
-          <button class="chart-itv-btn"        data-res="D"   onclick="setChartInterval(this)">일봉</button>
+          <button class="chart-itv-btn active" data-res="D"   onclick="setChartInterval(this)">일봉</button>
           <button class="chart-itv-btn"        data-res="W"   onclick="setChartInterval(this)">주봉</button>
         </div>
 
@@ -3375,7 +3375,7 @@ function chartAddTab(sym) {
   if (chartTabs.length >= 4) { alert('최대 4개 종목까지 추가할 수 있습니다.'); return; }
   const inp = document.getElementById('chart-sym-input');
   const s   = (sym || (inp ? inp.value.trim().toUpperCase() : '')) || '';
-  chartTabs.push({ sym: s, res: chartActiveTab()?.res || '5', data: null });
+  chartTabs.push({ sym: s, res: chartActiveTab()?.res || 'D', data: null });
   chartActiveIdx = chartTabs.length - 1;
   renderTabBar();
   if (s) loadChart();
@@ -3632,50 +3632,55 @@ function renderLWChart(data) {
       wickUpColor: colors.upColor, wickDownColor: colors.downColor,
     });
 
-    // 거래량 (전체의 약 13% 높이)
+    // 거래량 (전체의 약 18% 높이)
     lwVolSeries = lwChart.addHistogramSeries({
       priceFormat:  { type:'volume' },
       priceScaleId: 'vol',
-      scaleMargins: { top:0.87, bottom:0 },
+      scaleMargins: { top:0.82, bottom:0 },
     });
 
     // 볼린저밴드 시리즈
     const bbLineOpts = (color) => ({
       color, lineWidth:1, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false,
     });
-    // 2σ 외곽선만 (실선)
+    // 2σ 외곽선 (실선)
     lwBB.upper2 = lwChart.addLineSeries({ ...bbLineOpts(colors.bb2), title:'' });
     lwBB.lower2 = lwChart.addLineSeries({ ...bbLineOpts(colors.bb2), title:'' });
-    // 1σ: 라인 없음 (음영 경계로만 사용) — 투명 라인으로 처리
-    lwBB.upper1 = lwChart.addLineSeries({ ...bbLineOpts('transparent'), title:'' });
-    lwBB.lower1 = lwChart.addLineSeries({ ...bbLineOpts('transparent'), title:'' });
+    // 1σ: 보조선 (반투명)
+    lwBB.upper1 = lwChart.addLineSeries({ ...bbLineOpts(_hex2rgba(colors.bb1, 0.5)), lineWidth:1, title:'' });
+    lwBB.lower1 = lwChart.addLineSeries({ ...bbLineOpts(_hex2rgba(colors.bb1, 0.5)), lineWidth:1, title:'' });
     // 중간선 (SMA)
     lwBB.mid    = lwChart.addLineSeries({ ...bbLineOpts(colors.bbMid), lineWidth:1.5, title:'' });
 
     // ── 볼린저밴드 음영 (TradingView 스타일) ──
-    // 바깥 음영: 2σ upper ↔ 2σ lower (전체 밴드, 연한)
+    // 원리: AreaSeries는 value에서 차트 하단까지 채움
+    // upper에서 채운 색 - lower에서 덮으면 → upper~lower 사이만 색상 남음
+    //
+    // [±2σ 외곽 음영] 연한 파랑 (bb2 컬러, 낮은 투명도)
     lwBB.area2u = lwChart.addAreaSeries({
-      topColor: _hex2rgba(colors.bb2, 0.10),
-      bottomColor: _hex2rgba(colors.bb2, 0.10),
+      topColor:    _hex2rgba(colors.bb2, 0.08),
+      bottomColor: _hex2rgba(colors.bb2, 0.08),
       lineColor: 'transparent', lineWidth:0,
       priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false,
     });
+    // lower2 아래를 배경색으로 덮어 → upper2~lower2 사이만 남김
     lwBB.area2l = lwChart.addAreaSeries({
-      topColor: _hex2rgba(colors.bb2, 0.00),
-      bottomColor: _hex2rgba(colors.bb2, 0.00),
+      topColor:    '#131722',   // 차트 배경색과 동일
+      bottomColor: '#131722',
       lineColor: 'transparent', lineWidth:0,
       priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false,
     });
-    // 안쪽 음영: 1σ upper ↔ 1σ lower (더 진한)
+    // [±1σ 내부 음영] 중간 파랑 (bb1 컬러, 중간 투명도)
     lwBB.area1u = lwChart.addAreaSeries({
-      topColor: _hex2rgba(colors.bb1, 0.22),
-      bottomColor: _hex2rgba(colors.bb1, 0.22),
+      topColor:    _hex2rgba(colors.bb1, 0.18),
+      bottomColor: _hex2rgba(colors.bb1, 0.18),
       lineColor: 'transparent', lineWidth:0,
       priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false,
     });
+    // lower1 아래를 배경색으로 덮어 → upper1~lower1 사이만 남김
     lwBB.area1l = lwChart.addAreaSeries({
-      topColor: _hex2rgba(colors.bb1, 0.00),
-      bottomColor: _hex2rgba(colors.bb1, 0.00),
+      topColor:    '#131722',
+      bottomColor: '#131722',
       lineColor: 'transparent', lineWidth:0,
       priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false,
     });
@@ -3693,13 +3698,13 @@ function renderLWChart(data) {
     });
     lwBB.upper2?.applyOptions({ color: colors.bb2 });
     lwBB.lower2?.applyOptions({ color: colors.bb2 });
-    lwBB.upper1?.applyOptions({ color: 'transparent' });
-    lwBB.lower1?.applyOptions({ color: 'transparent' });
+    lwBB.upper1?.applyOptions({ color: _hex2rgba(colors.bb1, 0.5) });
+    lwBB.lower1?.applyOptions({ color: _hex2rgba(colors.bb1, 0.5) });
     lwBB.mid?.applyOptions({ color: colors.bbMid });
-    lwBB.area2u?.applyOptions({ topColor:_hex2rgba(colors.bb2,0.10), bottomColor:_hex2rgba(colors.bb2,0.10) });
-    lwBB.area2l?.applyOptions({ topColor:_hex2rgba(colors.bb2,0.00), bottomColor:_hex2rgba(colors.bb2,0.00) });
-    lwBB.area1u?.applyOptions({ topColor:_hex2rgba(colors.bb1,0.22), bottomColor:_hex2rgba(colors.bb1,0.22) });
-    lwBB.area1l?.applyOptions({ topColor:_hex2rgba(colors.bb1,0.00), bottomColor:_hex2rgba(colors.bb1,0.00) });
+    lwBB.area2u?.applyOptions({ topColor:_hex2rgba(colors.bb2,0.08), bottomColor:_hex2rgba(colors.bb2,0.08) });
+    lwBB.area2l?.applyOptions({ topColor:'#131722', bottomColor:'#131722' });
+    lwBB.area1u?.applyOptions({ topColor:_hex2rgba(colors.bb1,0.18), bottomColor:_hex2rgba(colors.bb1,0.18) });
+    lwBB.area1l?.applyOptions({ topColor:'#131722', bottomColor:'#131722' });
     lwChart.applyOptions({ width: wrap.clientWidth });
   }
 
@@ -3726,14 +3731,12 @@ function renderLWChart(data) {
   lwBB.lower1.setData(bbFilter(candles,'bbLower1'));
   lwBB.mid.setData(bbFilter(candles,'bbMid'));
 
-  // ── 볼린저 음영 (TradingView 스타일) ──
-  // area2u: 2σ upper (바깥 밴드 상단 기준선)
+  // ── 볼린저 음영 (상쇄 방식: upper에서 채우고 lower 이하를 배경색으로 덮음) ──
+  // ±2σ 외곽 음영: area2u(upper2 기준 아래로 연한 파랑) - area2l(lower2 기준 아래를 배경색으로 덮음)
   lwBB.area2u?.setData(candles.filter(c=>c.bbUpper2!=null).map(c=>({time:c.time,value:c.bbUpper2})));
-  // area2l: 2σ lower (바깥 밴드 하단 → area2u와 쌍을 이뤄 전체 밴드 음영)
   lwBB.area2l?.setData(candles.filter(c=>c.bbLower2!=null).map(c=>({time:c.time,value:c.bbLower2})));
-  // area1u: 1σ upper (안쪽 진한 음영 상단)
+  // ±1σ 내부 음영: area1u(upper1 기준 아래로 중간 파랑) - area1l(lower1 기준 아래를 배경색으로 덮음)
   lwBB.area1u?.setData(candles.filter(c=>c.bbUpper1!=null).map(c=>({time:c.time,value:c.bbUpper1})));
-  // area1l: 1σ lower (안쪽 진한 음영 하단)
   lwBB.area1l?.setData(candles.filter(c=>c.bbLower1!=null).map(c=>({time:c.time,value:c.bbLower1})));
 
   // ── 차트 로드 후 가격축 자동맞춤 (현재가 중앙) ──
@@ -3877,13 +3880,13 @@ function previewColors() {
   });
   lwBB.upper2?.applyOptions({ color: c.bb2 });
   lwBB.lower2?.applyOptions({ color: c.bb2 });
-  lwBB.upper1?.applyOptions({ color: 'transparent' });
-  lwBB.lower1?.applyOptions({ color: 'transparent' });
+  lwBB.upper1?.applyOptions({ color: _hex2rgba(c.bb1, 0.5) });
+  lwBB.lower1?.applyOptions({ color: _hex2rgba(c.bb1, 0.5) });
   lwBB.mid?.applyOptions({ color: c.bbMid });
-  lwBB.area2u?.applyOptions({ topColor:_hex2rgba(c.bb2,0.10), bottomColor:_hex2rgba(c.bb2,0.10) });
-  lwBB.area2l?.applyOptions({ topColor:_hex2rgba(c.bb2,0.00), bottomColor:_hex2rgba(c.bb2,0.00) });
-  lwBB.area1u?.applyOptions({ topColor:_hex2rgba(c.bb1,0.22), bottomColor:_hex2rgba(c.bb1,0.22) });
-  lwBB.area1l?.applyOptions({ topColor:_hex2rgba(c.bb1,0.00), bottomColor:_hex2rgba(c.bb1,0.00) });
+  lwBB.area2u?.applyOptions({ topColor:_hex2rgba(c.bb2,0.08), bottomColor:_hex2rgba(c.bb2,0.08) });
+  lwBB.area2l?.applyOptions({ topColor:'#131722', bottomColor:'#131722' });
+  lwBB.area1u?.applyOptions({ topColor:_hex2rgba(c.bb1,0.18), bottomColor:_hex2rgba(c.bb1,0.18) });
+  lwBB.area1l?.applyOptions({ topColor:'#131722', bottomColor:'#131722' });
 }
 
 function _readPickerColors() {
