@@ -189,7 +189,7 @@ select,button{font-family:var(--font);font-size:14px}
 .chart-scroll-wrap::-webkit-scrollbar{height:5px}
 .chart-scroll-wrap::-webkit-scrollbar-track{background:var(--bg3)}
 .chart-scroll-wrap::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
-.chart-inner{position:relative;height:460px;min-width:100%}
+.chart-inner{position:relative;height:600px;min-width:100%}
 
 .tbl-wrap{overflow-x:auto}
 table{width:100%;border-collapse:collapse}
@@ -428,7 +428,7 @@ tr.flip td{background:rgba(240,136,62,.06)}
       </div>
 
       <!-- ── 메인 차트 영역 (오버레이 버튼 포함) ── -->
-      <div id="chart-lw-wrap" style="position:relative;height:440px;background:#131722;border-radius:6px;border:1px solid var(--border)">
+      <div id="chart-lw-wrap" style="position:relative;height:600px;background:#131722;border-radius:6px;border:1px solid var(--border)">
 
         <!-- 빈 상태 -->
         <div id="chart-empty" style="display:flex;align-items:center;justify-content:center;
@@ -441,7 +441,8 @@ tr.flip td{background:rgba(240,136,62,.06)}
         <div class="chart-overlay-btns" id="chart-overlay-btns" style="display:none">
           <button class="cov-btn" title="확대" onclick="chartZoom(1)">＋</button>
           <button class="cov-btn" title="축소" onclick="chartZoom(-1)">－</button>
-          <button class="cov-btn" title="전체 보기" onclick="chartFit()" style="font-size:11px">⊡</button>
+          <button class="cov-btn" title="전체 보기 (시간축)" onclick="chartFit()" style="font-size:11px">⊡</button>
+          <button class="cov-btn" title="가격축 자동맞춤" onclick="chartFitPrice()" style="font-size:11px">⊞</button>
           <button class="cov-btn" title="색상 설정" onclick="togglePalette(event)" id="palette-toggle-btn">🎨</button>
         </div>
 
@@ -3616,11 +3617,11 @@ function renderLWChart(data) {
   if (!lwChart) {
     lwChart = LightweightCharts.createChart(wrap, {
       width:  wrap.clientWidth,
-      height: 440,
+      height: 600,
       layout: { background:{ color:'#131722' }, textColor:'#b2b5be' },
       grid:   { vertLines:{ color:'#1e222d' }, horzLines:{ color:'#1e222d' } },
       crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
-      rightPriceScale: { borderColor:'#2a2e39' },
+      rightPriceScale: { borderColor:'#2a2e39', autoScale: true },
       timeScale: { borderColor:'#2a2e39', timeVisible:true, secondsVisible:false },
     });
 
@@ -3631,44 +3632,50 @@ function renderLWChart(data) {
       wickUpColor: colors.upColor, wickDownColor: colors.downColor,
     });
 
-    // 거래량
+    // 거래량 (전체의 약 13% 높이)
     lwVolSeries = lwChart.addHistogramSeries({
       priceFormat:  { type:'volume' },
       priceScaleId: 'vol',
-      scaleMargins: { top:0.8, bottom:0 },
+      scaleMargins: { top:0.87, bottom:0 },
     });
 
     // 볼린저밴드 시리즈
     const bbLineOpts = (color) => ({
       color, lineWidth:1, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false,
     });
-    // 2σ 외곽선
+    // 2σ 외곽선만 (실선)
     lwBB.upper2 = lwChart.addLineSeries({ ...bbLineOpts(colors.bb2), title:'' });
     lwBB.lower2 = lwChart.addLineSeries({ ...bbLineOpts(colors.bb2), title:'' });
-    // 1σ 외곽선
-    lwBB.upper1 = lwChart.addLineSeries({ ...bbLineOpts(colors.bb1), title:'' });
-    lwBB.lower1 = lwChart.addLineSeries({ ...bbLineOpts(colors.bb1), title:'' });
-    // 중간선
+    // 1σ: 라인 없음 (음영 경계로만 사용) — 투명 라인으로 처리
+    lwBB.upper1 = lwChart.addLineSeries({ ...bbLineOpts('transparent'), title:'' });
+    lwBB.lower1 = lwChart.addLineSeries({ ...bbLineOpts('transparent'), title:'' });
+    // 중간선 (SMA)
     lwBB.mid    = lwChart.addLineSeries({ ...bbLineOpts(colors.bbMid), lineWidth:1.5, title:'' });
-    // 2σ~1σ 음영 (연한 파랑)
+
+    // ── 볼린저밴드 음영 (TradingView 스타일) ──
+    // 바깥 음영: 2σ upper ↔ 2σ lower (전체 밴드, 연한)
     lwBB.area2u = lwChart.addAreaSeries({
-      topColor: _hex2rgba(colors.bb2, 0.12), bottomColor: _hex2rgba(colors.bb2, 0.04),
+      topColor: _hex2rgba(colors.bb2, 0.10),
+      bottomColor: _hex2rgba(colors.bb2, 0.10),
       lineColor: 'transparent', lineWidth:0,
       priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false,
     });
     lwBB.area2l = lwChart.addAreaSeries({
-      topColor: _hex2rgba(colors.bb2, 0.04), bottomColor: _hex2rgba(colors.bb2, 0.12),
+      topColor: _hex2rgba(colors.bb2, 0.00),
+      bottomColor: _hex2rgba(colors.bb2, 0.00),
       lineColor: 'transparent', lineWidth:0,
       priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false,
     });
-    // 1σ 내부 음영 (더 진한)
+    // 안쪽 음영: 1σ upper ↔ 1σ lower (더 진한)
     lwBB.area1u = lwChart.addAreaSeries({
-      topColor: _hex2rgba(colors.bb1, 0.20), bottomColor: _hex2rgba(colors.bb1, 0.08),
+      topColor: _hex2rgba(colors.bb1, 0.22),
+      bottomColor: _hex2rgba(colors.bb1, 0.22),
       lineColor: 'transparent', lineWidth:0,
       priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false,
     });
     lwBB.area1l = lwChart.addAreaSeries({
-      topColor: _hex2rgba(colors.bb1, 0.08), bottomColor: _hex2rgba(colors.bb1, 0.20),
+      topColor: _hex2rgba(colors.bb1, 0.00),
+      bottomColor: _hex2rgba(colors.bb1, 0.00),
       lineColor: 'transparent', lineWidth:0,
       priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false,
     });
@@ -3686,13 +3693,13 @@ function renderLWChart(data) {
     });
     lwBB.upper2?.applyOptions({ color: colors.bb2 });
     lwBB.lower2?.applyOptions({ color: colors.bb2 });
-    lwBB.upper1?.applyOptions({ color: colors.bb1 });
-    lwBB.lower1?.applyOptions({ color: colors.bb1 });
+    lwBB.upper1?.applyOptions({ color: 'transparent' });
+    lwBB.lower1?.applyOptions({ color: 'transparent' });
     lwBB.mid?.applyOptions({ color: colors.bbMid });
-    lwBB.area2u?.applyOptions({ topColor:_hex2rgba(colors.bb2,0.12), bottomColor:_hex2rgba(colors.bb2,0.04) });
-    lwBB.area2l?.applyOptions({ topColor:_hex2rgba(colors.bb2,0.04), bottomColor:_hex2rgba(colors.bb2,0.12) });
-    lwBB.area1u?.applyOptions({ topColor:_hex2rgba(colors.bb1,0.20), bottomColor:_hex2rgba(colors.bb1,0.08) });
-    lwBB.area1l?.applyOptions({ topColor:_hex2rgba(colors.bb1,0.08), bottomColor:_hex2rgba(colors.bb1,0.20) });
+    lwBB.area2u?.applyOptions({ topColor:_hex2rgba(colors.bb2,0.10), bottomColor:_hex2rgba(colors.bb2,0.10) });
+    lwBB.area2l?.applyOptions({ topColor:_hex2rgba(colors.bb2,0.00), bottomColor:_hex2rgba(colors.bb2,0.00) });
+    lwBB.area1u?.applyOptions({ topColor:_hex2rgba(colors.bb1,0.22), bottomColor:_hex2rgba(colors.bb1,0.22) });
+    lwBB.area1l?.applyOptions({ topColor:_hex2rgba(colors.bb1,0.00), bottomColor:_hex2rgba(colors.bb1,0.00) });
     lwChart.applyOptions({ width: wrap.clientWidth });
   }
 
@@ -3718,14 +3725,22 @@ function renderLWChart(data) {
   lwBB.upper1.setData(bbFilter(candles,'bbUpper1'));
   lwBB.lower1.setData(bbFilter(candles,'bbLower1'));
   lwBB.mid.setData(bbFilter(candles,'bbMid'));
-  // 음영: 2σ upper → 1σ upper (위쪽 밴드 사이)
-  lwBB.area2u?.setData(candles.filter(c=>c.bbUpper2!=null).map(c=>({time:c.time,value:c.bbUpper2})));
-  lwBB.area2l?.setData(candles.filter(c=>c.bbUpper1!=null).map(c=>({time:c.time,value:c.bbUpper1})));
-  // 음영: 1σ lower → 2σ lower (아래쪽 밴드 사이)
-  lwBB.area1u?.setData(candles.filter(c=>c.bbLower1!=null).map(c=>({time:c.time,value:c.bbLower1})));
-  lwBB.area1l?.setData(candles.filter(c=>c.bbLower2!=null).map(c=>({time:c.time,value:c.bbLower2})));
 
-  lwChart.timeScale().scrollToRealTime();
+  // ── 볼린저 음영 (TradingView 스타일) ──
+  // area2u: 2σ upper (바깥 밴드 상단 기준선)
+  lwBB.area2u?.setData(candles.filter(c=>c.bbUpper2!=null).map(c=>({time:c.time,value:c.bbUpper2})));
+  // area2l: 2σ lower (바깥 밴드 하단 → area2u와 쌍을 이뤄 전체 밴드 음영)
+  lwBB.area2l?.setData(candles.filter(c=>c.bbLower2!=null).map(c=>({time:c.time,value:c.bbLower2})));
+  // area1u: 1σ upper (안쪽 진한 음영 상단)
+  lwBB.area1u?.setData(candles.filter(c=>c.bbUpper1!=null).map(c=>({time:c.time,value:c.bbUpper1})));
+  // area1l: 1σ lower (안쪽 진한 음영 하단)
+  lwBB.area1l?.setData(candles.filter(c=>c.bbLower1!=null).map(c=>({time:c.time,value:c.bbLower1})));
+
+  // ── 차트 로드 후 가격축 자동맞춤 (현재가 중앙) ──
+  lwChart.timeScale().fitContent();
+  setTimeout(() => {
+    lwCandleSeries?.priceScale()?.applyOptions({ autoScale: true });
+  }, 50);
 
   // ── 가격 표시 ──
   const last    = candles[candles.length - 1];
@@ -3787,6 +3802,15 @@ function chartZoom(dir) {
 function chartFit() {
   if (!lwChart) return;
   lwChart.timeScale().fitContent();
+  setTimeout(() => {
+    lwCandleSeries?.priceScale()?.applyOptions({ autoScale: true });
+  }, 50);
+}
+
+// 가격축만 자동맞춤 (현재가 중앙)
+function chartFitPrice() {
+  if (!lwChart) return;
+  lwCandleSeries?.priceScale()?.applyOptions({ autoScale: true });
 }
 
 // ── 8. 색상 팔레트 ──
@@ -3853,13 +3877,13 @@ function previewColors() {
   });
   lwBB.upper2?.applyOptions({ color: c.bb2 });
   lwBB.lower2?.applyOptions({ color: c.bb2 });
-  lwBB.upper1?.applyOptions({ color: c.bb1 });
-  lwBB.lower1?.applyOptions({ color: c.bb1 });
+  lwBB.upper1?.applyOptions({ color: 'transparent' });
+  lwBB.lower1?.applyOptions({ color: 'transparent' });
   lwBB.mid?.applyOptions({ color: c.bbMid });
-  lwBB.area2u?.applyOptions({ topColor:_hex2rgba(c.bb2,0.12), bottomColor:_hex2rgba(c.bb2,0.04) });
-  lwBB.area2l?.applyOptions({ topColor:_hex2rgba(c.bb2,0.04), bottomColor:_hex2rgba(c.bb2,0.12) });
-  lwBB.area1u?.applyOptions({ topColor:_hex2rgba(c.bb1,0.20), bottomColor:_hex2rgba(c.bb1,0.08) });
-  lwBB.area1l?.applyOptions({ topColor:_hex2rgba(c.bb1,0.08), bottomColor:_hex2rgba(c.bb1,0.20) });
+  lwBB.area2u?.applyOptions({ topColor:_hex2rgba(c.bb2,0.10), bottomColor:_hex2rgba(c.bb2,0.10) });
+  lwBB.area2l?.applyOptions({ topColor:_hex2rgba(c.bb2,0.00), bottomColor:_hex2rgba(c.bb2,0.00) });
+  lwBB.area1u?.applyOptions({ topColor:_hex2rgba(c.bb1,0.22), bottomColor:_hex2rgba(c.bb1,0.22) });
+  lwBB.area1l?.applyOptions({ topColor:_hex2rgba(c.bb1,0.00), bottomColor:_hex2rgba(c.bb1,0.00) });
 }
 
 function _readPickerColors() {
