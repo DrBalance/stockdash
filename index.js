@@ -11,6 +11,7 @@ import { WebSocket, WebSocketServer } from 'ws';
 import cron from 'node-cron';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { LRUCache } from 'lru-cache';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = path.dirname(__filename);
@@ -660,72 +661,124 @@ async function fetchSymbols() {
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// 차트 데이터 (Yahoo Finance OHLCV)
+// 차트 데이터 — Finnhub + LRU 캐시 + 볼린저밴드
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-async function fetchChartData(symbol, interval, range) {
-  const encoded = encodeURIComponent(symbol);
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encoded}?interval=${interval}&range=${range}`;
-  const r = await fetch(url, {
-    headers: { 'User-Agent': 'Mozilla/5.0' },
-    signal: AbortSignal.timeout(10000),
-  });
-  if (!r.ok) throw new Error('Yahoo chart HTTP ' + r.status);
+
+// Finnhub resolution → 캐시 TTL (ms)
+const CHART_TTL = {
+  '5':   60_000,
+  '30':  120_000,
+  '120': 300_000,
+  '240': 300_000,
+  'D':   3_600_000,
+  'W':   3_600_000,
+};
+
+// Finnhub resolution → 조회 기간 (초)
+const CHART_FROM_SEC = {
+  '5':   5   * 24 * 3600,
+  '30':  30  * 24 * 3600,
+  '120': 90  * 24 * 3600,
+  '240': 180 * 24 * 3600,
+  'D':   365 * 24 * 3600,
+  'W':   3 * 365 * 24 * 3600,
+};
+
+const chartCache = new LRUCache({ max: 200, ttlResolution: 1000 });
+
+// 볼린저밴드 계산 (SMA20 기준, 1σ + 2σ)
+function calcBollinger(closes, period = 20) {
+  const upper2 = [], lower2 = [], upper1 = [], lower1 = [], mid = [];
+  for (let i = 0; i < closes.length; i++) {
+    if (i < period - 1) {
+      upper2.push(null); lower2.push(null);
+      upper1.push(null); lower1.push(null);
+      mid.push(null);
+      continue;
+    }
+    const slice = closes.slice(i - period + 1, i + 1);
+    const sma   = slice.reduce((a, b) => a + b, 0) / period;
+    const std   = Math.sqrt(slice.reduce((a, b) => a + (b - sma) ** 2, 0) / period);
+    mid.push(+sma.toFixed(4));
+    upper2.push(+(sma + std * 2).toFixed(4));
+    lower2.push(+(sma - std * 2).toFixed(4));
+    upper1.push(+(sma + std * 1).toFixed(4));
+    lower1.push(+(sma - std * 1).toFixed(4));
+  }
+  return { upper2, lower2, upper1, lower1, mid };
+}
+
+async function fetchChartData(symbol, resolution) {
+  const cacheKey = `${symbol}:${resolution}`;
+  const cached   = chartCache.get(cacheKey);
+  if (cached) return cached;
+
+  const to   = Math.floor(Date.now() / 1000);
+  const from = to - (CHART_FROM_SEC[resolution] ?? 30 * 24 * 3600);
+
+  const url = `https://finnhub.io/api/v1/stock/candle`
+    + `?symbol=${encodeURIComponent(symbol)}`
+    + `&resolution=${resolution}&from=${from}&to=${to}`
+    + `&token=${FINNHUB_TOKEN}`;
+
+  const r = await fetch(url, { signal: AbortSignal.timeout(10000) });
+  if (!r.ok) throw new Error('Finnhub HTTP ' + r.status);
   const j = await r.json();
-  const result = j?.chart?.result?.[0];
-  if (!result) throw new Error('No chart data');
+  if (j.s === 'no_data') throw new Error('no_data');
+  if (j.s !== 'ok')      throw new Error('Finnhub: ' + (j.s || 'unknown'));
 
-  const meta       = result.meta;
-  const timestamps = result.timestamp || [];
-  const quote      = result.indicators?.quote?.[0] || {};
-  const { open, high, low, close, volume } = quote;
+  const { t, o, h, l, c, v } = j;
+  const candles = t.map((ts, i) => ({
+    time:   ts,
+    open:   +o[i].toFixed(4),
+    high:   +h[i].toFixed(4),
+    low:    +l[i].toFixed(4),
+    close:  +c[i].toFixed(4),
+    volume: v[i] ?? 0,
+  }));
 
-  // OHLCV 배열로 변환 (null 캔들 제거)
-  const candles = timestamps.map((t, i) => ({
-    time:   t,           // Unix timestamp (초)
-    open:   open?.[i]   ?? null,
-    high:   high?.[i]   ?? null,
-    low:    low?.[i]    ?? null,
-    close:  close?.[i]  ?? null,
-    volume: volume?.[i] ?? 0,
-  })).filter(c => c.open != null && c.close != null);
+  const bb = calcBollinger(candles.map(cd => cd.close));
+  candles.forEach((cd, i) => {
+    cd.bbUpper2 = bb.upper2[i];
+    cd.bbLower2 = bb.lower2[i];
+    cd.bbUpper1 = bb.upper1[i];
+    cd.bbLower1 = bb.lower1[i];
+    cd.bbMid    = bb.mid[i];
+  });
 
-  return {
-    symbol,
-    interval,
-    range,
-    currency:    meta.currency || 'USD',
-    currentPrice: meta.regularMarketPrice ?? null,
-    previousClose: meta.chartPreviousClose ?? null,
+  const last = candles[candles.length - 1];
+  const data = {
+    symbol, resolution,
+    currentPrice:  last?.close ?? null,
+    previousClose: candles.length > 1 ? candles[candles.length - 2].close : null,
     candles,
     updatedAt: new Date().toISOString(),
   };
+
+  chartCache.set(cacheKey, data, { ttl: CHART_TTL[resolution] ?? 60_000 });
+  return data;
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // REST API — 심볼 & 차트
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// 심볼 목록
 app.get('/api/symbols', (req, res) => {
   const q = (req.query.q || '').toUpperCase().trim();
   if (!q) return res.json({ count: state.symbols.length, symbols: state.symbols.slice(0, 50) });
   const matched = state.symbols.filter(s =>
-    s.symbol.startsWith(q) || s.name.toUpperCase().includes(q)
+    s.symbol.startsWith(q) || s.name?.toUpperCase().includes(q)
   ).slice(0, 30);
   res.json({ count: matched.length, symbols: matched });
 });
 
-// 차트 데이터
+const VALID_RESOLUTIONS = ['5', '30', '120', '240', 'D', 'W'];
 app.get('/api/chart', async (req, res) => {
-  const symbol   = (req.query.symbol || 'SPY').toUpperCase();
-  const interval = req.query.interval || '5m';   // 1m 2m 5m 15m 30m 60m 1d
-  const range    = req.query.range    || '1d';   // 1d 5d 1mo 3mo 6mo 1y
-  // interval/range 유효성 체크
-  const validIntervals = ['1m','2m','5m','15m','30m','60m','90m','1h','1d','1wk','1mo'];
-  const validRanges    = ['1d','5d','1mo','3mo','6mo','1y','2y','5y','ytd','max'];
-  if (!validIntervals.includes(interval)) return res.status(400).json({ error: 'invalid interval' });
-  if (!validRanges.includes(range))       return res.status(400).json({ error: 'invalid range' });
+  const symbol     = (req.query.symbol || 'SPY').toUpperCase();
+  const resolution = req.query.resolution || 'D';
+  if (!VALID_RESOLUTIONS.includes(resolution))
+    return res.status(400).json({ error: 'invalid resolution' });
   try {
-    const data = await fetchChartData(symbol, interval, range);
+    const data = await fetchChartData(symbol, resolution);
     res.json(data);
   } catch (e) {
     res.status(500).json({ error: e.message, symbol });

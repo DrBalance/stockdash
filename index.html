@@ -224,6 +224,63 @@ tr.flip td{background:rgba(240,136,62,.06)}
   background:var(--bg3);color:var(--text3);cursor:pointer;font-family:var(--font);transition:all .15s}
 .chart-itv-btn:hover{color:var(--text2);border-color:var(--text3)}
 .chart-itv-btn.active{background:var(--blue-dim);color:var(--blue);border-color:var(--blue-dim)}
+
+/* ── 차트 탭 — 종목 탭 ── */
+.ctab-bar{display:flex;align-items:center;gap:4px;margin-bottom:14px;flex-wrap:wrap}
+.ctab{display:flex;align-items:center;gap:5px;padding:5px 12px;border-radius:6px;
+  border:1px solid var(--border);background:var(--bg3);color:var(--text3);
+  font-size:13px;font-weight:600;cursor:pointer;font-family:var(--mono);transition:all .15s}
+.ctab:hover{border-color:var(--text3);color:var(--text2)}
+.ctab.active{background:var(--blue-dim);border-color:var(--blue-dim);color:var(--blue)}
+.ctab .ctab-x{font-size:11px;opacity:.6;margin-left:2px;line-height:1}
+.ctab .ctab-x:hover{opacity:1;color:var(--red)}
+.ctab-add{padding:5px 10px;border-radius:6px;border:1px dashed var(--border);
+  background:transparent;color:var(--text3);font-size:13px;cursor:pointer;
+  font-family:var(--font);transition:all .15s}
+.ctab-add:hover{border-color:var(--blue);color:var(--blue)}
+
+/* ── 차트 오버레이 버튼 ── */
+.chart-overlay-btns{position:absolute;top:10px;right:12px;z-index:10;
+  display:flex;align-items:center;gap:4px}
+.cov-btn{width:28px;height:28px;border-radius:5px;border:1px solid var(--border);
+  background:rgba(22,27,34,.85);color:var(--text2);font-size:13px;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;transition:all .15s;
+  backdrop-filter:blur(4px)}
+.cov-btn:hover{border-color:var(--blue);color:var(--blue)}
+
+/* ── 색상 팔레트 패널 ── */
+.palette-panel{position:absolute;top:46px;right:12px;z-index:50;width:260px;
+  background:var(--bg2);border:1px solid var(--border);border-radius:10px;
+  box-shadow:0 8px 32px rgba(0,0,0,.5);padding:16px;display:none}
+.palette-panel.open{display:block}
+.pp-title{font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;
+  letter-spacing:.08em;margin-bottom:12px}
+.pp-preset-list{display:flex;flex-direction:column;gap:4px;margin-bottom:12px;
+  max-height:150px;overflow-y:auto}
+.pp-preset{display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:6px;
+  border:1px solid transparent;cursor:pointer;transition:all .15s;font-size:13px;color:var(--text2)}
+.pp-preset:hover{background:var(--bg3)}
+.pp-preset.active{border-color:var(--blue-dim);background:rgba(31,111,235,.1);color:var(--blue)}
+.pp-preset .pp-swatch{display:flex;gap:3px}
+.pp-preset .pp-swatch span{width:12px;height:12px;border-radius:2px;display:inline-block}
+.pp-preset .pp-name{flex:1;font-weight:600}
+.pp-preset .pp-del{font-size:11px;color:var(--red);opacity:0;transition:opacity .15s}
+.pp-preset:hover .pp-del{opacity:1}
+.pp-divider{height:1px;background:var(--border);margin:10px 0}
+.pp-row{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.pp-row label{font-size:12px;color:var(--text3);flex:1}
+.pp-row input[type=color]{width:36px;height:24px;border:1px solid var(--border);
+  border-radius:4px;background:none;cursor:pointer;padding:1px}
+.pp-actions{display:flex;gap:6px;margin-top:10px}
+.pp-btn{flex:1;padding:5px 0;border-radius:5px;font-size:12px;font-weight:600;
+  cursor:pointer;font-family:var(--font);border:1px solid var(--border);
+  background:var(--bg3);color:var(--text2);transition:all .15s}
+.pp-btn:hover{border-color:var(--blue);color:var(--blue)}
+.pp-btn.primary{background:var(--blue-dim);border-color:var(--blue-dim);color:var(--blue)}
+.pp-save-row{display:flex;gap:6px;margin-top:8px}
+.pp-name-input{flex:1;background:var(--bg3);border:1px solid var(--border);border-radius:5px;
+  color:var(--text);padding:5px 8px;font-size:12px;font-family:var(--font);outline:none}
+.pp-name-input:focus{border-color:var(--blue)}
 </style>
 </head>
 <body>
@@ -324,8 +381,14 @@ tr.flip td{background:rgba(240,136,62,.06)}
   <div class="main">
     <div class="card" style="padding:20px 24px">
 
-      <!-- 심볼 검색 + 시간단위 컨트롤 -->
-      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:18px">
+      <!-- ── 종목 탭 바 ── -->
+      <div class="ctab-bar" id="ctab-bar">
+        <!-- JS로 동적 생성 -->
+        <button class="ctab-add" onclick="chartAddTab()">＋ 종목 추가</button>
+      </div>
+
+      <!-- ── 심볼 검색 + 시간단위 컨트롤 ── -->
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px">
         <div style="position:relative;flex:0 0 auto">
           <input id="chart-sym-input" type="text" placeholder="심볼 입력 (예: AAPL)"
             style="background:var(--bg3);color:var(--text);border:1px solid var(--border);
@@ -337,49 +400,90 @@ tr.flip td{background:rgba(240,136,62,.06)}
           <div id="chart-sym-dropdown"
             style="display:none;position:absolute;top:100%;left:0;z-index:200;
                    background:var(--bg2);border:1px solid var(--border);border-radius:6px;
-                   width:280px;max-height:220px;overflow-y:auto;box-shadow:0 8px 24px rgba(0,0,0,.4);margin-top:3px">
+                   width:280px;max-height:220px;overflow-y:auto;
+                   box-shadow:0 8px 24px rgba(0,0,0,.4);margin-top:3px">
           </div>
         </div>
         <button onclick="loadChart()"
           style="background:var(--blue-dim);color:var(--blue);border:1px solid var(--blue-dim);
-                 border-radius:6px;padding:7px 18px;font-size:14px;font-weight:600;cursor:pointer;font-family:var(--font)">
-          조회
-        </button>
-        <!-- 시간단위 버튼 -->
+                 border-radius:6px;padding:7px 18px;font-size:14px;font-weight:600;
+                 cursor:pointer;font-family:var(--font)">조회</button>
+
+        <!-- 시간단위 버튼 (Finnhub resolution) -->
         <div style="display:flex;gap:4px;margin-left:8px" id="chart-interval-btns">
-          <button class="chart-itv-btn active" data-itv="1m"  data-range="1d"  onclick="setChartInterval(this)">1분</button>
-          <button class="chart-itv-btn"        data-itv="5m"  data-range="1d"  onclick="setChartInterval(this)">5분</button>
-          <button class="chart-itv-btn"        data-itv="15m" data-range="5d"  onclick="setChartInterval(this)">15분</button>
-          <button class="chart-itv-btn"        data-itv="1h"  data-range="1mo" onclick="setChartInterval(this)">1시간</button>
-          <button class="chart-itv-btn"        data-itv="1d"  data-range="1y"  onclick="setChartInterval(this)">일봉</button>
+          <button class="chart-itv-btn active" data-res="5"   onclick="setChartInterval(this)">5분</button>
+          <button class="chart-itv-btn"        data-res="30"  onclick="setChartInterval(this)">30분</button>
+          <button class="chart-itv-btn"        data-res="120" onclick="setChartInterval(this)">2시간</button>
+          <button class="chart-itv-btn"        data-res="240" onclick="setChartInterval(this)">4시간</button>
+          <button class="chart-itv-btn"        data-res="D"   onclick="setChartInterval(this)">일봉</button>
+          <button class="chart-itv-btn"        data-res="W"   onclick="setChartInterval(this)">주봉</button>
         </div>
+
+        <!-- 가격 표시 -->
         <div style="margin-left:auto;display:flex;align-items:center;gap:10px">
-          <div id="chart-status-badge"
-            style="font-size:12px;color:var(--text3);font-family:var(--mono)">—</div>
-          <div id="chart-price-display"
-            style="font-size:20px;font-weight:700;font-family:var(--mono);color:var(--text)">—</div>
-          <div id="chart-change-display"
-            style="font-size:13px;font-family:var(--mono)">—</div>
+          <div id="chart-status-badge" style="font-size:12px;color:var(--text3);font-family:var(--mono)">—</div>
+          <div id="chart-price-display" style="font-size:20px;font-weight:700;font-family:var(--mono);color:var(--text)">—</div>
+          <div id="chart-change-display" style="font-size:13px;font-family:var(--mono)">—</div>
         </div>
       </div>
 
-      <!-- Lightweight Charts 캔들차트 -->
-      <div id="chart-lw-wrap" style="position:relative;height:420px;background:var(--bg);border-radius:6px;border:1px solid var(--border)">
-        <div id="chart-empty" style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text3);font-size:14px;flex-direction:column;gap:10px">
+      <!-- ── 메인 차트 영역 (오버레이 버튼 포함) ── -->
+      <div id="chart-lw-wrap" style="position:relative;height:440px;background:#131722;border-radius:6px;border:1px solid var(--border)">
+
+        <!-- 빈 상태 -->
+        <div id="chart-empty" style="display:flex;align-items:center;justify-content:center;
+             height:100%;color:var(--text3);font-size:14px;flex-direction:column;gap:10px">
           <div style="font-size:32px;opacity:.3">📈</div>
           <div>심볼을 입력하고 조회하세요</div>
         </div>
+
+        <!-- 오버레이 컨트롤 버튼 -->
+        <div class="chart-overlay-btns" id="chart-overlay-btns" style="display:none">
+          <button class="cov-btn" title="확대" onclick="chartZoom(1)">＋</button>
+          <button class="cov-btn" title="축소" onclick="chartZoom(-1)">－</button>
+          <button class="cov-btn" title="전체 보기" onclick="chartFit()" style="font-size:11px">⊡</button>
+          <button class="cov-btn" title="색상 설정" onclick="togglePalette(event)" id="palette-toggle-btn">🎨</button>
+        </div>
+
+        <!-- 색상 팔레트 패널 -->
+        <div class="palette-panel" id="palette-panel">
+          <div class="pp-title">색상 프리셋</div>
+          <div class="pp-preset-list" id="pp-preset-list"></div>
+          <div class="pp-divider"></div>
+          <div class="pp-title">색상 편집</div>
+          <div class="pp-row">
+            <label>상승봉</label>
+            <input type="color" id="pp-up"    onchange="previewColors()">
+          </div>
+          <div class="pp-row">
+            <label>하락봉</label>
+            <input type="color" id="pp-down"  onchange="previewColors()">
+          </div>
+          <div class="pp-row">
+            <label>볼린저 중간선</label>
+            <input type="color" id="pp-bbmid" onchange="previewColors()">
+          </div>
+          <div class="pp-row">
+            <label>볼린저 2σ</label>
+            <input type="color" id="pp-bb2"   onchange="previewColors()">
+          </div>
+          <div class="pp-row">
+            <label>볼린저 1σ</label>
+            <input type="color" id="pp-bb1"   onchange="previewColors()">
+          </div>
+          <div class="pp-save-row">
+            <input class="pp-name-input" id="pp-save-name" placeholder="프리셋 이름" maxlength="20">
+            <button class="pp-btn primary" onclick="savePreset()">저장</button>
+          </div>
+        </div>
+
       </div>
 
-      <!-- 거래량 차트 -->
-      <div id="chart-vol-wrap" style="position:relative;height:100px;background:var(--bg);border-radius:6px;border:1px solid var(--border);margin-top:4px;display:none">
-      </div>
-
-      <!-- 하단 정보 -->
+      <!-- 하단 정보 바 -->
       <div id="chart-info-bar"
-        style="display:none;margin-top:12px;padding:10px 14px;background:var(--bg3);
-               border-radius:6px;border:1px solid var(--border);font-size:12px;
-               color:var(--text3);display:flex;gap:20px;flex-wrap:wrap">
+        style="margin-top:10px;padding:9px 14px;background:var(--bg3);border-radius:6px;
+               border:1px solid var(--border);font-size:12px;color:var(--text3);
+               display:none;gap:20px;flex-wrap:wrap">
       </div>
 
     </div>
@@ -505,7 +609,7 @@ function switchTab(tab) {
   if (tab === 'chart') {
     chartTabVisible = true;
     initChartSymbols();
-    if (chartPendingUpdate) { chartPendingUpdate = false; renderLWChart(); }
+    if (chartPendingUpdate) { chartPendingUpdate = false; renderLWChart(window._chartPendingData); window._chartPendingData = null; } else { const _t = chartActiveTab(); if (_t?.data) renderLWChart(_t.data); }
   } else {
     chartTabVisible = false;
   }
@@ -3190,62 +3294,156 @@ function updateZoom(val){
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// 📈 차트 탭 — Lightweight Charts 캔들 + 거래량
+// 📈 차트 탭 — Lightweight Charts + Finnhub + 볼린저밴드
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-// ── 전역 변수 ──
-let lwChart         = null;   // LightweightCharts 인스턴스
-let lwCandleSeries  = null;   // 캔들 시리즈
-let lwVolSeries     = null;   // 거래량 히스토그램 시리즈
-let chartCurrentSym   = '';
-let chartCurrentItv   = '1m';
-let chartCurrentRange = '1d';
-let chartTabVisible   = false;
-let chartPendingUpdate = false;
-let chartPollTimer    = null;  // 장중 30초 폴링 setInterval ID
-let chartSymbols      = [];    // 서버에서 받은 심볼 목록
-let chartDropdownIdx  = -1;    // 키보드 탐색 인덱스
-window._chartPendingData = null; // 백그라운드 업데이트 대기 데이터
+// ── 색상 프리셋 기본값 ──
+const DEFAULT_PRESETS = {
+  'TradingView 다크': {
+    upColor:'#26a69a', downColor:'#ef5350',
+    bbMid:'#f5a623', bb2:'#2196f3', bb1:'#42a5f5',
+  },
+  '동양식 (빨/파)': {
+    upColor:'#ef5350', downColor:'#2962ff',
+    bbMid:'#f5a623', bb2:'#ab47bc', bb1:'#ce93d8',
+  },
+  '서구식 (초/빨)': {
+    upColor:'#26a69a', downColor:'#ef5350',
+    bbMid:'#ff9800', bb2:'#7e57c2', bb1:'#b39ddb',
+  },
+};
 
-// ── 1. 심볼 목록 초기 fetch (1회) ──
+function _loadPresets() {
+  try {
+    const raw = localStorage.getItem('chart_presets');
+    return raw ? JSON.parse(raw) : {};
+  } catch { return {}; }
+}
+function _savePresets(presets) {
+  localStorage.setItem('chart_presets', JSON.stringify(presets));
+}
+function _getActivePresetName() {
+  return localStorage.getItem('chart_active_preset') || 'TradingView 다크';
+}
+function _setActivePresetName(name) {
+  localStorage.setItem('chart_active_preset', name);
+}
+function getAllPresets() {
+  return { ...DEFAULT_PRESETS, ..._loadPresets() };
+}
+function getActiveColors() {
+  const name   = _getActivePresetName();
+  const all    = getAllPresets();
+  return all[name] || DEFAULT_PRESETS['TradingView 다크'];
+}
+
+// ── 전역 변수 ──
+let lwChart        = null;
+let lwCandleSeries = null;
+let lwVolSeries    = null;
+let lwBB = { upper2:null, lower2:null, upper1:null, lower1:null, mid:null, area2u:null, area2l:null, area1u:null, area1l:null };
+
+let chartTabVisible    = false;
+let chartPendingUpdate = false;
+let chartPollTimer     = null;
+window._chartPendingData = null;
+
+let chartSymbols     = [];
+let chartDropdownIdx = -1;
 let _chartSymFetched = false;
+
+// ── 종목 탭 상태 ──
+// [{sym, res, data}]
+let chartTabs       = [];
+let chartActiveIdx  = 0;
+
+function chartActiveTab() { return chartTabs[chartActiveIdx] || null; }
+
+// ── 1. 종목 탭 관리 ──
+function chartAddTab(sym) {
+  if (chartTabs.length >= 4) { alert('최대 4개 종목까지 추가할 수 있습니다.'); return; }
+  const inp = document.getElementById('chart-sym-input');
+  const s   = (sym || (inp ? inp.value.trim().toUpperCase() : '')) || '';
+  chartTabs.push({ sym: s, res: chartActiveTab()?.res || '5', data: null });
+  chartActiveIdx = chartTabs.length - 1;
+  renderTabBar();
+  if (s) loadChart();
+}
+
+function chartSelectTab(idx) {
+  chartActiveIdx = idx;
+  renderTabBar();
+  const tab = chartActiveTab();
+  if (!tab) return;
+  const inp = document.getElementById('chart-sym-input');
+  if (inp) inp.value = tab.sym;
+  // resolution 버튼 동기화
+  document.querySelectorAll('.chart-itv-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.res === tab.res);
+  });
+  if (tab.data) renderLWChart(tab.data);
+  else if (tab.sym) loadChart();
+}
+
+function chartCloseTab(idx, e) {
+  e.stopPropagation();
+  chartTabs.splice(idx, 1);
+  if (chartTabs.length === 0) {
+    chartActiveIdx = 0;
+    renderTabBar();
+    _resetChart();
+    return;
+  }
+  chartActiveIdx = Math.min(chartActiveIdx, chartTabs.length - 1);
+  renderTabBar();
+  chartSelectTab(chartActiveIdx);
+}
+
+function renderTabBar() {
+  const bar = document.getElementById('ctab-bar');
+  if (!bar) return;
+  let html = chartTabs.map((t, i) => `
+    <div class="ctab ${i === chartActiveIdx ? 'active' : ''}" onclick="chartSelectTab(${i})">
+      <span>${t.sym || '—'}</span>
+      <span class="ctab-x" onclick="chartCloseTab(${i}, event)">✕</span>
+    </div>`).join('');
+  html += `<button class="ctab-add" onclick="chartAddTab()">＋ 종목 추가</button>`;
+  bar.innerHTML = html;
+}
+
+function _resetChart() {
+  const empty = document.getElementById('chart-empty');
+  const overlay = document.getElementById('chart-overlay-btns');
+  const info = document.getElementById('chart-info-bar');
+  if (empty)   { empty.style.display = 'flex'; empty.innerHTML = '<div style="font-size:32px;opacity:.3">📈</div><div>심볼을 입력하고 조회하세요</div>'; }
+  if (overlay) overlay.style.display = 'none';
+  if (info)    info.style.display = 'none';
+  if (lwChart) { lwChart.remove(); lwChart = null; lwCandleSeries = null; lwVolSeries = null; lwBB = {upper2:null,lower2:null,upper1:null,lower1:null,mid:null,area2u:null,area2l:null,area1u:null,area1l:null}; }
+}
+
+// ── 2. 심볼 자동완성 ──
+let _chartSymFetchedFlag = false;
 async function initChartSymbols() {
-  if (_chartSymFetched) return;
-  _chartSymFetched = true;
+  if (_chartSymFetchedFlag) return;
+  _chartSymFetchedFlag = true;
   try {
     const res  = await fetch(API_BASE + '/api/symbols?q=');
     const data = await res.json();
-    // 서버 응답: { count, symbols: [{symbol, name}, ...] }
     chartSymbols = data.symbols || (Array.isArray(data) ? data : []);
-  } catch(e) {
-    console.warn('[Chart] 심볼 목록 fetch 실패:', e);
-    chartSymbols = [];
-  }
+  } catch(e) { chartSymbols = []; }
 }
 
-// ── 2. 자동완성 드롭다운 ──
 function onChartSymInput(val) {
-  const q   = val.trim().toUpperCase();
-  const dd  = document.getElementById('chart-sym-dropdown');
+  const q  = val.trim().toUpperCase();
+  const dd = document.getElementById('chart-sym-dropdown');
   if (!dd) return;
   chartDropdownIdx = -1;
-
-  if (!q || q.length < 1) { dd.style.display = 'none'; return; }
-
-  // 서버 심볼 목록 로컬 필터 (최대 8개)
-  const matches = chartSymbols
-    .filter(s => s.symbol && s.symbol.startsWith(q))
-    .slice(0, 8);
-
-  // 서버 목록 아직 없으면 서버에 직접 쿼리
+  if (!q) { dd.style.display = 'none'; return; }
+  const matches = chartSymbols.filter(s => s.symbol?.startsWith(q)).slice(0, 8);
   if (chartSymbols.length === 0) {
-    _fetchSymbolsRemote(q).then(list => {
-      chartSymbols = list;
-      _renderDropdown(list.slice(0, 8));
-    });
+    _fetchSymbolsRemote(q).then(list => { chartSymbols = list; _renderDropdown(list.slice(0,8)); });
     return;
   }
-
   _renderDropdown(matches);
 }
 
@@ -3253,40 +3451,32 @@ async function _fetchSymbolsRemote(q) {
   try {
     const res  = await fetch(API_BASE + '/api/symbols?q=' + encodeURIComponent(q));
     const data = await res.json();
-    // 서버 응답: { count, symbols: [{symbol, name}, ...] }
     return data.symbols || (Array.isArray(data) ? data : []);
   } catch { return []; }
 }
 
 function _renderDropdown(list) {
-  const dd  = document.getElementById('chart-sym-dropdown');
-  const inp = document.getElementById('chart-sym-input');
+  const dd = document.getElementById('chart-sym-dropdown');
   if (!dd) return;
-
   if (!list.length) { dd.style.display = 'none'; return; }
-
-  dd.innerHTML = list.map((item, i) => {
+  dd.innerHTML = list.map(item => {
     const sym  = item.symbol || item;
-    const desc = item.name || item.description || '';  // 서버 필드: name
+    const desc = item.name || item.description || '';
     return `<div class="_chart-dd-item"
-      style="padding:8px 12px;cursor:pointer;border-bottom:1px solid var(--border);
-             display:flex;flex-direction:column;gap:2px;transition:background .1s"
+      style="padding:8px 12px;cursor:pointer;border-bottom:1px solid var(--border)"
       data-sym="${sym}"
       onmouseenter="this.style.background='var(--bg3)'"
       onmouseleave="this.style.background=''"
       onclick="selectChartSym('${sym}')">
-      <span style="font-size:13px;font-weight:700;font-family:var(--mono);color:var(--text)">${sym}</span>
-      ${desc ? `<span style="font-size:11px;color:var(--text3)">${desc}</span>` : ''}
+      <div style="font-size:13px;font-weight:700;font-family:var(--mono);color:var(--text)">${sym}</div>
+      ${desc ? `<div style="font-size:11px;color:var(--text3)">${desc}</div>` : ''}
     </div>`;
   }).join('');
-
   dd.style.display = 'block';
 }
 
-// ── 3. 키보드 탐색 ──
 function highlightDropdown() {
-  const items = document.querySelectorAll('._chart-dd-item');
-  items.forEach((el, i) => {
+  document.querySelectorAll('._chart-dd-item').forEach((el, i) => {
     el.style.background = i === chartDropdownIdx ? 'var(--bg3)' : '';
   });
 }
@@ -3294,32 +3484,16 @@ function highlightDropdown() {
 function onChartSymKeydown(e) {
   const dd    = document.getElementById('chart-sym-dropdown');
   const items = document.querySelectorAll('._chart-dd-item');
-  const n     = items.length;
-
-  if (e.key === 'ArrowDown') {
+  if (e.key === 'ArrowDown') { e.preventDefault(); chartDropdownIdx = Math.min(chartDropdownIdx+1, items.length-1); highlightDropdown(); }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); chartDropdownIdx = Math.max(chartDropdownIdx-1, 0); highlightDropdown(); }
+  else if (e.key === 'Enter') {
     e.preventDefault();
-    chartDropdownIdx = Math.min(chartDropdownIdx + 1, n - 1);
-    highlightDropdown();
-  } else if (e.key === 'ArrowUp') {
-    e.preventDefault();
-    chartDropdownIdx = Math.max(chartDropdownIdx - 1, 0);
-    highlightDropdown();
-  } else if (e.key === 'Enter') {
-    e.preventDefault();
-    if (chartDropdownIdx >= 0 && items[chartDropdownIdx]) {
-      selectChartSym(items[chartDropdownIdx].dataset.sym);
-    } else {
-      // 드롭다운 없이 Enter → 그냥 조회
-      if (dd) dd.style.display = 'none';
-      loadChart();
-    }
-  } else if (e.key === 'Escape') {
-    if (dd) dd.style.display = 'none';
-    chartDropdownIdx = -1;
+    if (chartDropdownIdx >= 0 && items[chartDropdownIdx]) selectChartSym(items[chartDropdownIdx].dataset.sym);
+    else { if (dd) dd.style.display = 'none'; loadChart(); }
   }
+  else if (e.key === 'Escape') { if (dd) dd.style.display = 'none'; chartDropdownIdx = -1; }
 }
 
-// ── 4. 드롭다운 항목 선택 ──
 function selectChartSym(sym) {
   const inp = document.getElementById('chart-sym-input');
   const dd  = document.getElementById('chart-sym-dropdown');
@@ -3329,245 +3503,396 @@ function selectChartSym(sym) {
   loadChart();
 }
 
-// ── 5. 시간단위 버튼 전환 ──
+// ── 3. 시간단위 버튼 ──
 function setChartInterval(btn) {
   document.querySelectorAll('.chart-itv-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
-  chartCurrentItv   = btn.dataset.itv   || '1m';
-  chartCurrentRange = btn.dataset.range  || '1d';
-  if (chartCurrentSym) loadChart();
+  const res = btn.dataset.res || '5';
+  const tab = chartActiveTab();
+  if (tab) tab.res = res;
+  if (tab?.sym) loadChart();
 }
 
-// ── 6. 메인 로드 함수 ──
-async function loadChart() {
-  const inp = document.getElementById('chart-sym-input');
-  const sym = (inp ? inp.value.trim().toUpperCase() : '') || chartCurrentSym;
-  if (!sym) return;
-
-  // 심볼 변경 시 폴링 초기화
-  if (sym !== chartCurrentSym) {
-    chartCurrentSym = sym;
-    _stopChartPoll();
-  }
-
-  await fetchAndRenderChart(false);
-
-  // 장 중이면 30초 폴링 시작
-  const ms = window._marketState || getMarketStateClient();
-  if (ms !== 'CLOSED') {
-    _stopChartPoll();
-    chartPollTimer = setInterval(() => fetchAndRenderChart(true), 30000);
-  }
-}
-
+// ── 4. 메인 로드 ──
 function _stopChartPoll() {
   if (chartPollTimer) { clearInterval(chartPollTimer); chartPollTimer = null; }
 }
 
-// ── 7. fetch + 렌더 (폴링마다 호출) ──
-async function fetchAndRenderChart(silent) {
-  if (!chartCurrentSym) return;
+async function loadChart() {
+  const inp = document.getElementById('chart-sym-input');
+  const sym = (inp ? inp.value.trim().toUpperCase() : '') || chartActiveTab()?.sym || '';
+  if (!sym) return;
 
-  // 로딩 표시 (silent 아닐 때만)
+  const res = chartActiveTab()?.res
+    || document.querySelector('.chart-itv-btn.active')?.dataset.res
+    || '5';
+
+  // 탭이 없으면 첫 탭 생성
+  if (chartTabs.length === 0) {
+    chartTabs.push({ sym, res, data: null });
+    chartActiveIdx = 0;
+    renderTabBar();
+  } else {
+    chartTabs[chartActiveIdx].sym = sym;
+    chartTabs[chartActiveIdx].res = res;
+    renderTabBar();
+  }
+
+  _stopChartPoll();
+  await fetchAndRenderChart(false);
+
+  const ms = window._marketState || getMarketStateClient();
+  if (ms !== 'CLOSED') {
+    chartPollTimer = setInterval(() => fetchAndRenderChart(true), 30000);
+  }
+}
+
+// ── 5. fetch + 렌더 ──
+async function fetchAndRenderChart(silent) {
+  const tab = chartActiveTab();
+  if (!tab?.sym) return;
+
   if (!silent) {
     const empty = document.getElementById('chart-empty');
     if (empty) {
       empty.style.display = 'flex';
-      empty.innerHTML = `
-        <div class="spinner"></div>
-        <div style="font-size:13px;color:var(--text3)">
-          ${chartCurrentSym} ${chartCurrentItv} 데이터 로딩 중...
-        </div>`;
+      empty.innerHTML = `<div class="spinner"></div><div style="font-size:13px;color:var(--text3)">${tab.sym} 데이터 로딩 중...</div>`;
     }
   }
 
   try {
-    const url = `${API_BASE}/api/chart?symbol=${encodeURIComponent(chartCurrentSym)}&interval=${chartCurrentItv}&range=${chartCurrentRange}`;
+    const url  = `${API_BASE}/api/chart?symbol=${encodeURIComponent(tab.sym)}&resolution=${tab.res}`;
     const res  = await fetch(url);
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
     if (data.error) throw new Error(data.error);
+    if (!data.candles?.length) throw new Error('데이터 없음');
 
-    // 서버가 candles 키로 반환 → quotes로 정규화
-    if (!data.quotes && data.candles) data.quotes = data.candles;
-    if (!data.quotes || !data.quotes.length) throw new Error('데이터 없음');
+    tab.data = data;
 
-    // 탭 안 보이면 → 메모리에 저장 후 복귀 시 렌더
     if (!chartTabVisible) {
       window._chartPendingData = data;
       chartPendingUpdate = true;
       return;
     }
-
     renderLWChart(data);
   } catch(e) {
-    console.error('[Chart] fetch 실패:', e);
     if (!silent) {
       const empty = document.getElementById('chart-empty');
       if (empty) {
         empty.style.display = 'flex';
-        empty.innerHTML = `
-          <div style="font-size:28px;opacity:.4">⚠️</div>
-          <div style="font-size:13px;color:var(--red)">데이터 로드 실패: ${e.message}</div>`;
+        empty.innerHTML = `<div style="font-size:28px;opacity:.4">⚠️</div><div style="font-size:13px;color:var(--red)">로드 실패: ${e.message}</div>`;
       }
     }
   }
 }
 
-// ── 8. Lightweight Charts 실제 렌더 ──
+// ── 6. LW Chart 렌더링 ──
 function renderLWChart(data) {
-  // 백그라운드 대기 데이터 사용 (인수 없이 호출 시)
-  if (!data) {
-    data = window._chartPendingData;
-    window._chartPendingData = null;
-  }
-  if (!data || !data.quotes || !data.quotes.length) return;
+  if (!data) { data = window._chartPendingData; window._chartPendingData = null; }
+  if (!data?.candles?.length) return;
 
   const wrap  = document.getElementById('chart-lw-wrap');
   const empty = document.getElementById('chart-empty');
+  const overlayBtns = document.getElementById('chart-overlay-btns');
   if (!wrap) return;
 
-  // empty 패널 숨기기
   if (empty) empty.style.display = 'none';
+  if (overlayBtns) overlayBtns.style.display = 'flex';
 
-  // ── LW Chart 초기화 (재사용 or 신규 생성) ──
+  const colors = getActiveColors();
+
+  // ── 차트 초기화 ──
   if (!lwChart) {
     lwChart = LightweightCharts.createChart(wrap, {
       width:  wrap.clientWidth,
-      height: 420,
-      layout: {
-        background: { color: '#0d1117' },
-        textColor:  '#8b949e',
-      },
-      grid: {
-        vertLines:  { color: '#21262d' },
-        horzLines:  { color: '#21262d' },
-      },
-      crosshair: {
-        mode: LightweightCharts.CrosshairMode.Normal,
-      },
-      rightPriceScale: {
-        borderColor: '#30363d',
-      },
-      timeScale: {
-        borderColor:     '#30363d',
-        timeVisible:     true,
-        secondsVisible:  false,
-      },
+      height: 440,
+      layout: { background:{ color:'#131722' }, textColor:'#b2b5be' },
+      grid:   { vertLines:{ color:'#1e222d' }, horzLines:{ color:'#1e222d' } },
+      crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+      rightPriceScale: { borderColor:'#2a2e39' },
+      timeScale: { borderColor:'#2a2e39', timeVisible:true, secondsVisible:false },
     });
 
-    // 캔들 시리즈
+    // 캔들
     lwCandleSeries = lwChart.addCandlestickSeries({
-      upColor:          '#3fb950',
-      downColor:        '#f85149',
-      borderUpColor:    '#3fb950',
-      borderDownColor:  '#f85149',
-      wickUpColor:      '#3fb950',
-      wickDownColor:    '#f85149',
+      upColor: colors.upColor, downColor: colors.downColor,
+      borderUpColor: colors.upColor, borderDownColor: colors.downColor,
+      wickUpColor: colors.upColor, wickDownColor: colors.downColor,
     });
 
-    // 거래량 히스토그램 (메인 차트 하단 20%)
+    // 거래량
     lwVolSeries = lwChart.addHistogramSeries({
-      priceFormat:    { type: 'volume' },
-      priceScaleId:   'vol',
-      scaleMargins:   { top: 0.8, bottom: 0 },
-      color:          'rgba(63,185,80,0.3)',
+      priceFormat:  { type:'volume' },
+      priceScaleId: 'vol',
+      scaleMargins: { top:0.8, bottom:0 },
     });
 
-    // 반응형: wrap 크기 변경 시 chart width 조정
-    const _ro = new ResizeObserver(() => {
-      if (lwChart && wrap.clientWidth > 0) {
-        lwChart.applyOptions({ width: wrap.clientWidth });
-      }
+    // 볼린저밴드 시리즈
+    const bbLineOpts = (color) => ({
+      color, lineWidth:1, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false,
     });
-    _ro.observe(wrap);
+    // 2σ 외곽선
+    lwBB.upper2 = lwChart.addLineSeries({ ...bbLineOpts(colors.bb2), title:'' });
+    lwBB.lower2 = lwChart.addLineSeries({ ...bbLineOpts(colors.bb2), title:'' });
+    // 1σ 외곽선
+    lwBB.upper1 = lwChart.addLineSeries({ ...bbLineOpts(colors.bb1), title:'' });
+    lwBB.lower1 = lwChart.addLineSeries({ ...bbLineOpts(colors.bb1), title:'' });
+    // 중간선
+    lwBB.mid    = lwChart.addLineSeries({ ...bbLineOpts(colors.bbMid), lineWidth:1.5, title:'' });
+    // 2σ~1σ 음영 (연한 파랑)
+    lwBB.area2u = lwChart.addAreaSeries({
+      topColor: _hex2rgba(colors.bb2, 0.12), bottomColor: _hex2rgba(colors.bb2, 0.04),
+      lineColor: 'transparent', lineWidth:0,
+      priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false,
+    });
+    lwBB.area2l = lwChart.addAreaSeries({
+      topColor: _hex2rgba(colors.bb2, 0.04), bottomColor: _hex2rgba(colors.bb2, 0.12),
+      lineColor: 'transparent', lineWidth:0,
+      priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false,
+    });
+    // 1σ 내부 음영 (더 진한)
+    lwBB.area1u = lwChart.addAreaSeries({
+      topColor: _hex2rgba(colors.bb1, 0.20), bottomColor: _hex2rgba(colors.bb1, 0.08),
+      lineColor: 'transparent', lineWidth:0,
+      priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false,
+    });
+    lwBB.area1l = lwChart.addAreaSeries({
+      topColor: _hex2rgba(colors.bb1, 0.08), bottomColor: _hex2rgba(colors.bb1, 0.20),
+      lineColor: 'transparent', lineWidth:0,
+      priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false,
+    });
 
+    // ResizeObserver
+    new ResizeObserver(() => {
+      if (lwChart && wrap.clientWidth > 0) lwChart.applyOptions({ width: wrap.clientWidth });
+    }).observe(wrap);
   } else {
-    // 기존 차트 재사용 — 크기 맞추기
+    // 색상만 갱신
+    lwCandleSeries.applyOptions({
+      upColor:colors.upColor, downColor:colors.downColor,
+      borderUpColor:colors.upColor, borderDownColor:colors.downColor,
+      wickUpColor:colors.upColor, wickDownColor:colors.downColor,
+    });
+    lwBB.upper2?.applyOptions({ color: colors.bb2 });
+    lwBB.lower2?.applyOptions({ color: colors.bb2 });
+    lwBB.upper1?.applyOptions({ color: colors.bb1 });
+    lwBB.lower1?.applyOptions({ color: colors.bb1 });
+    lwBB.mid?.applyOptions({ color: colors.bbMid });
+    lwBB.area2u?.applyOptions({ topColor:_hex2rgba(colors.bb2,0.12), bottomColor:_hex2rgba(colors.bb2,0.04) });
+    lwBB.area2l?.applyOptions({ topColor:_hex2rgba(colors.bb2,0.04), bottomColor:_hex2rgba(colors.bb2,0.12) });
+    lwBB.area1u?.applyOptions({ topColor:_hex2rgba(colors.bb1,0.20), bottomColor:_hex2rgba(colors.bb1,0.08) });
+    lwBB.area1l?.applyOptions({ topColor:_hex2rgba(colors.bb1,0.08), bottomColor:_hex2rgba(colors.bb1,0.20) });
     lwChart.applyOptions({ width: wrap.clientWidth });
   }
 
-  // ── 데이터 변환 ──
-  const quotes = data.quotes;
+  // ── 데이터 세팅 ──
+  const candles = data.candles;
 
-  const candleData = quotes.map(q => ({
-    time:  q.time,
-    open:  q.open,
-    high:  q.high,
-    low:   q.low,
-    close: q.close,
-  }));
+  lwCandleSeries.setData(candles.map(c => ({
+    time:c.time, open:c.open, high:c.high, low:c.low, close:c.close,
+  })));
 
-  const volData = quotes.map(q => ({
-    time:  q.time,
-    value: q.volume || 0,
-    color: q.close >= q.open
-      ? 'rgba(63,185,80,0.3)'
-      : 'rgba(248,81,73,0.3)',
-  }));
+  lwVolSeries.setData(candles.map(c => ({
+    time:c.time, value:c.volume||0,
+    color: c.close >= c.open ? _hex2rgba(colors.upColor,0.35) : _hex2rgba(colors.downColor,0.35),
+  })));
 
-  lwCandleSeries.setData(candleData);
-  lwVolSeries.setData(volData);
+  // 볼린저밴드 (null 필터링)
+  const bbFilter = (arr, key) => candles
+    .filter(c => c[key] != null)
+    .map(c => ({ time:c.time, value:c[key] }));
 
-  // 최신봉으로 스크롤
+  lwBB.upper2.setData(bbFilter(candles,'bbUpper2'));
+  lwBB.lower2.setData(bbFilter(candles,'bbLower2'));
+  lwBB.upper1.setData(bbFilter(candles,'bbUpper1'));
+  lwBB.lower1.setData(bbFilter(candles,'bbLower1'));
+  lwBB.mid.setData(bbFilter(candles,'bbMid'));
+  // 음영: 2σ upper → 1σ upper (위쪽 밴드 사이)
+  lwBB.area2u?.setData(candles.filter(c=>c.bbUpper2!=null).map(c=>({time:c.time,value:c.bbUpper2})));
+  lwBB.area2l?.setData(candles.filter(c=>c.bbUpper1!=null).map(c=>({time:c.time,value:c.bbUpper1})));
+  // 음영: 1σ lower → 2σ lower (아래쪽 밴드 사이)
+  lwBB.area1u?.setData(candles.filter(c=>c.bbLower1!=null).map(c=>({time:c.time,value:c.bbLower1})));
+  lwBB.area1l?.setData(candles.filter(c=>c.bbLower2!=null).map(c=>({time:c.time,value:c.bbLower2})));
+
   lwChart.timeScale().scrollToRealTime();
 
-  // ── 상단 가격 표시 업데이트 ──
-  const last    = quotes[quotes.length - 1];
-  const first   = quotes[0];
-  const change  = last.close - first.open;
-  const changePct = (change / first.open) * 100;
+  // ── 가격 표시 ──
+  const last    = candles[candles.length - 1];
+  const refClose = data.previousClose || candles[0].open;
+  const change   = last.close - refClose;
+  const changePct = (change / refClose) * 100;
 
   const priceEl  = document.getElementById('chart-price-display');
   const changeEl = document.getElementById('chart-change-display');
   const badgeEl  = document.getElementById('chart-status-badge');
-
-  if (priceEl) {
-    priceEl.textContent = '$' + last.close.toFixed(2);
-  }
+  if (priceEl)  priceEl.textContent = '$' + last.close.toFixed(2);
   if (changeEl) {
-    const sign   = change >= 0 ? '+' : '';
-    changeEl.textContent  = `${sign}${change.toFixed(2)} (${sign}${changePct.toFixed(2)}%)`;
-    changeEl.style.color  = change >= 0 ? 'var(--green)' : 'var(--red)';
+    const sign = change >= 0 ? '+' : '';
+    changeEl.textContent = `${sign}${change.toFixed(2)} (${sign}${changePct.toFixed(2)}%)`;
+    changeEl.style.color = change >= 0 ? 'var(--green)' : 'var(--red)';
   }
   if (badgeEl) {
-    const ms     = window._marketState || getMarketStateClient();
-    const msMap  = { REGULAR:'정규장', PRE:'프리마켓', AFTER:'애프터', CLOSED:'장마감' };
-    badgeEl.textContent = `${chartCurrentSym} · ${msMap[ms] || ms}`;
+    const ms    = window._marketState || getMarketStateClient();
+    const msMap = { REGULAR:'정규장', PRE:'프리마켓', AFTER:'애프터', CLOSED:'장마감' };
+    const tab   = chartActiveTab();
+    badgeEl.textContent = `${tab?.sym || ''} · ${msMap[ms] || ms}`;
     badgeEl.style.color = ms === 'REGULAR' ? 'var(--green)' : 'var(--text3)';
   }
 
-  // ── 하단 정보 바 ──
-  _updateChartInfoBar(quotes, data);
-}
-
-function _updateChartInfoBar(quotes, data) {
+  // ── 정보 바 ──
   const bar = document.getElementById('chart-info-bar');
-  if (!bar) return;
-
-  const last = quotes[quotes.length - 1];
-  const vols = quotes.map(q => q.volume || 0);
-  const avgVol = vols.length
-    ? Math.round(vols.reduce((a, b) => a + b, 0) / vols.length)
-    : 0;
-
-  const fmt = v => v >= 1e6 ? (v/1e6).toFixed(2)+'M'
-                 : v >= 1e3 ? (v/1e3).toFixed(1)+'K'
-                 : String(v);
-
-  bar.style.display = 'flex';
-  bar.innerHTML = [
-    `<span>심볼: <b style="color:var(--text)">${chartCurrentSym}</b></span>`,
-    `<span>단위: <b style="color:var(--text)">${chartCurrentItv}</b></span>`,
-    `<span>고가: <b style="color:var(--green)">$${Math.max(...quotes.map(q=>q.high)).toFixed(2)}</b></span>`,
-    `<span>저가: <b style="color:var(--red)">$${Math.min(...quotes.map(q=>q.low)).toFixed(2)}</b></span>`,
-    `<span>거래량(최종): <b style="color:var(--text)">${fmt(last.volume||0)}</b></span>`,
-    `<span>평균거래량: <b style="color:var(--text)">${fmt(avgVol)}</b></span>`,
-    data.updatedAt
-      ? `<span>업데이트: <b style="color:var(--text3)">${new Date(data.updatedAt).toLocaleTimeString('ko-KR',{timeZone:'America/New_York'})} ET</b></span>`
-      : '',
-  ].filter(Boolean).join('');
+  if (bar) {
+    bar.style.display = 'flex';
+    const fmt = v => v>=1e6?(v/1e6).toFixed(2)+'M':v>=1e3?(v/1e3).toFixed(1)+'K':String(v);
+    const resLabel = { '5':'5분','30':'30분','120':'2시간','240':'4시간','D':'일봉','W':'주봉' };
+    bar.innerHTML = [
+      `<span>단위: <b style="color:var(--text)">${resLabel[data.resolution]||data.resolution}</b></span>`,
+      `<span>캔들: <b style="color:var(--text)">${candles.length}개</b></span>`,
+      `<span>고가: <b style="color:var(--green)">$${Math.max(...candles.map(c=>c.high)).toFixed(2)}</b></span>`,
+      `<span>저가: <b style="color:var(--red)">$${Math.min(...candles.map(c=>c.low)).toFixed(2)}</b></span>`,
+      `<span>거래량(최종): <b style="color:var(--text)">${fmt(last.volume||0)}</b></span>`,
+      data.updatedAt ? `<span>업데이트: <b style="color:var(--text3)">${new Date(data.updatedAt).toLocaleTimeString('ko-KR',{timeZone:'America/New_York'})} ET</b></span>` : '',
+    ].filter(Boolean).join('');
+  }
 }
+
+function _hex2rgba(hex, alpha) {
+  const r = parseInt(hex.slice(1,3),16);
+  const g = parseInt(hex.slice(3,5),16);
+  const b = parseInt(hex.slice(5,7),16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
+// ── 7. 확대/축소 버튼 ──
+function chartZoom(dir) {
+  if (!lwChart) return;
+  const ts = lwChart.timeScale();
+  const range = ts.getVisibleLogicalRange();
+  if (!range) return;
+  const len  = range.to - range.from;
+  const step = len * 0.2 * (-dir);
+  ts.setVisibleLogicalRange({ from: range.from + step, to: range.to - step });
+}
+function chartFit() {
+  if (!lwChart) return;
+  lwChart.timeScale().fitContent();
+}
+
+// ── 8. 색상 팔레트 ──
+function togglePalette(e) {
+  e.stopPropagation();
+  const panel = document.getElementById('palette-panel');
+  if (!panel) return;
+  const isOpen = panel.classList.contains('open');
+  panel.classList.toggle('open', !isOpen);
+  if (!isOpen) renderPalettePanel();
+}
+
+document.addEventListener('click', () => {
+  document.getElementById('palette-panel')?.classList.remove('open');
+});
+
+function renderPalettePanel() {
+  const list   = document.getElementById('pp-preset-list');
+  const active = _getActivePresetName();
+  const all    = getAllPresets();
+  const user   = _loadPresets();
+
+  list.innerHTML = Object.entries(all).map(([name, c]) => {
+    const isDefault = DEFAULT_PRESETS[name];
+    const isActive  = name === active;
+    return `<div class="pp-preset ${isActive?'active':''}" onclick="applyPreset('${name}')">
+      <div class="pp-swatch">
+        <span style="background:${c.upColor}"></span>
+        <span style="background:${c.downColor}"></span>
+        <span style="background:${c.bbMid}"></span>
+      </div>
+      <span class="pp-name">${name}</span>
+      ${!isDefault ? `<span class="pp-del" onclick="deletePreset(event,'${name}')">삭제</span>` : ''}
+    </div>`;
+  }).join('');
+
+  // 현재 색상을 color picker에 반영
+  const c = getActiveColors();
+  document.getElementById('pp-up').value    = c.upColor;
+  document.getElementById('pp-down').value  = c.downColor;
+  document.getElementById('pp-bbmid').value = c.bbMid;
+  document.getElementById('pp-bb2').value   = c.bb2;
+  document.getElementById('pp-bb1').value   = c.bb1;
+  document.getElementById('pp-save-name').value = active;
+}
+
+function applyPreset(name) {
+  _setActivePresetName(name);
+  renderPalettePanel();
+  if (lwChart) {
+    const tab = chartActiveTab();
+    if (tab?.data) renderLWChart(tab.data);
+  }
+}
+
+function previewColors() {
+  // 실시간 미리보기 — 차트에 즉시 반영
+  const c = _readPickerColors();
+  if (!lwChart) return;
+  lwCandleSeries?.applyOptions({
+    upColor:c.upColor, downColor:c.downColor,
+    borderUpColor:c.upColor, borderDownColor:c.downColor,
+    wickUpColor:c.upColor, wickDownColor:c.downColor,
+  });
+  lwBB.upper2?.applyOptions({ color: c.bb2 });
+  lwBB.lower2?.applyOptions({ color: c.bb2 });
+  lwBB.upper1?.applyOptions({ color: c.bb1 });
+  lwBB.lower1?.applyOptions({ color: c.bb1 });
+  lwBB.mid?.applyOptions({ color: c.bbMid });
+  lwBB.area2u?.applyOptions({ topColor:_hex2rgba(c.bb2,0.12), bottomColor:_hex2rgba(c.bb2,0.04) });
+  lwBB.area2l?.applyOptions({ topColor:_hex2rgba(c.bb2,0.04), bottomColor:_hex2rgba(c.bb2,0.12) });
+  lwBB.area1u?.applyOptions({ topColor:_hex2rgba(c.bb1,0.20), bottomColor:_hex2rgba(c.bb1,0.08) });
+  lwBB.area1l?.applyOptions({ topColor:_hex2rgba(c.bb1,0.08), bottomColor:_hex2rgba(c.bb1,0.20) });
+}
+
+function _readPickerColors() {
+  return {
+    upColor:  document.getElementById('pp-up')?.value    || '#26a69a',
+    downColor:document.getElementById('pp-down')?.value  || '#ef5350',
+    bbMid:    document.getElementById('pp-bbmid')?.value || '#f5a623',
+    bb2:      document.getElementById('pp-bb2')?.value   || '#2196f3',
+    bb1:      document.getElementById('pp-bb1')?.value   || '#42a5f5',
+  };
+}
+
+function savePreset() {
+  const name = document.getElementById('pp-save-name')?.value.trim();
+  if (!name) { alert('프리셋 이름을 입력하세요'); return; }
+  const user = _loadPresets();
+  user[name] = _readPickerColors();
+  _savePresets(user);
+  _setActivePresetName(name);
+  renderPalettePanel();
+}
+
+function deletePreset(e, name) {
+  e.stopPropagation();
+  if (!confirm(`"${name}" 프리셋을 삭제할까요?`)) return;
+  const user = _loadPresets();
+  delete user[name];
+  _savePresets(user);
+  if (_getActivePresetName() === name) _setActivePresetName('TradingView 다크');
+  renderPalettePanel();
+}
+
+// ── 9. initChartSymbols (switchTab에서 호출) ──
+async function initChartSymbols() {
+  if (_chartSymFetchedFlag) return;
+  _chartSymFetchedFlag = true;
+  try {
+    const res  = await fetch(API_BASE + '/api/symbols?q=');
+    const data = await res.json();
+    chartSymbols = data.symbols || (Array.isArray(data) ? data : []);
+  } catch { chartSymbols = []; }
+}
+
 </script>
 </body>
 </html>
