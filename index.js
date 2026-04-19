@@ -3,6 +3,7 @@
 //   현재가(SPY/QQQ 등) → Finnhub WebSocket (실시간) → 클라이언트 WS 푸시
 //   VIX/VVIX/VOLD     → Yahoo Finance 1분 Cron → 클라이언트 WS 푸시
 //   옵션체인/Greeks    → CBOE 15분 Cron → REST API 제공
+//   차트 캔들          → Twelve Data REST API + LRU 캐시
 
 import express from 'express';
 import cors from 'cors';
@@ -16,9 +17,10 @@ import { LRUCache } from 'lru-cache';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = path.dirname(__filename);
 
-const PORT           = process.env.PORT || 3000;
-const FINNHUB_TOKEN  = process.env.FINNHUB_TOKEN;
-const WATCH_SYMBOLS  = ['SPY', 'QQQ', 'IWM', 'GLD', 'SLV'];
+const PORT            = process.env.PORT || 3000;
+const FINNHUB_TOKEN   = process.env.FINNHUB_TOKEN;
+const TWELVEDATA_KEY  = process.env.TWELVEDATA_KEY;
+const WATCH_SYMBOLS   = ['SPY', 'QQQ', 'IWM', 'GLD', 'SLV'];
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // 인메모리 상태 저장소
@@ -182,6 +184,16 @@ function getMarketState() {
   return 'CLOSED';
 }
 function normPDF(x) { return Math.exp(-x * x / 2) / Math.sqrt(2 * Math.PI); }
+
+// ET(America/New_York) offset → UTC 변환용
+// 서머타임(EDT=-4h) / 표준시(EST=-5h) 자동 감지
+function getETOffsetMs(date) {
+  const utcStr = date.toLocaleString('en-US', { timeZone: 'UTC' });
+  const etStr  = date.toLocaleString('en-US', { timeZone: 'America/New_York' });
+  const utcD   = new Date(utcStr);
+  const etD    = new Date(etStr);
+  return utcD.getTime() - etD.getTime(); // 양수: ET가 UTC보다 느림
+}
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // 1. Finnhub WebSocket — 현재가 실시간
@@ -661,10 +673,20 @@ async function fetchSymbols() {
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// 차트 데이터 — Finnhub + LRU 캐시 + 볼린저밴드
+// 차트 데이터 — Twelve Data + LRU 캐시 + 볼린저밴드
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-// Finnhub resolution → 캐시 TTL (ms)
+// Twelve Data interval 매핑 (대시보드 resolution → TD interval)
+const TD_INTERVAL = {
+  '5':   '5min',
+  '30':  '30min',
+  '120': '2h',
+  '240': '4h',
+  'D':   '1day',
+  'W':   '1week',
+};
+
+// resolution → 캐시 TTL (ms)
 const CHART_TTL = {
   '5':   60_000,
   '30':  120_000,
@@ -674,14 +696,14 @@ const CHART_TTL = {
   'W':   3_600_000,
 };
 
-// Finnhub resolution → 조회 기간 (초)
-const CHART_FROM_SEC = {
-  '5':   5   * 24 * 3600,
-  '30':  30  * 24 * 3600,
-  '120': 90  * 24 * 3600,
-  '240': 180 * 24 * 3600,
-  'D':   365 * 24 * 3600,
-  'W':   3 * 365 * 24 * 3600,
+// resolution → outputsize (캔들 수)
+const CHART_OUTPUTSIZE = {
+  '5':   390,   // ~5거래일 분봉
+  '30':  300,   // ~30거래일
+  '120': 180,   // ~90거래일 2시간봉
+  '240': 180,   // ~180거래일 4시간봉
+  'D':   365,   // 1년 일봉
+  'W':   156,   // 3년 주봉
 };
 
 const chartCache = new LRUCache({ max: 200, ttlResolution: 1000 });
@@ -713,29 +735,56 @@ async function fetchChartData(symbol, resolution) {
   const cached   = chartCache.get(cacheKey);
   if (cached) return cached;
 
-  const to   = Math.floor(Date.now() / 1000);
-  const from = to - (CHART_FROM_SEC[resolution] ?? 30 * 24 * 3600);
+  const interval    = TD_INTERVAL[resolution] ?? '1day';
+  const outputsize  = CHART_OUTPUTSIZE[resolution] ?? 300;
 
-  const url = `https://finnhub.io/api/v1/stock/candle`
+  const url = `https://api.twelvedata.com/time_series`
     + `?symbol=${encodeURIComponent(symbol)}`
-    + `&resolution=${resolution}&from=${from}&to=${to}`
-    + `&token=${FINNHUB_TOKEN}`;
+    + `&interval=${interval}`
+    + `&outputsize=${outputsize}`
+    + `&order=ASC`
+    + `&apikey=${TWELVEDATA_KEY}`;
 
   const r = await fetch(url, { signal: AbortSignal.timeout(10000) });
-  if (!r.ok) throw new Error('Finnhub HTTP ' + r.status);
+  if (!r.ok) throw new Error('TwelveData HTTP ' + r.status);
   const j = await r.json();
-  if (j.s === 'no_data') throw new Error('no_data');
-  if (j.s !== 'ok')      throw new Error('Finnhub: ' + (j.s || 'unknown'));
 
-  const { t, o, h, l, c, v } = j;
-  const candles = t.map((ts, i) => ({
-    time:   ts,
-    open:   +o[i].toFixed(4),
-    high:   +h[i].toFixed(4),
-    low:    +l[i].toFixed(4),
-    close:  +c[i].toFixed(4),
-    volume: v[i] ?? 0,
-  }));
+  // Twelve Data 에러 응답 처리
+  if (j.status === 'error' || j.code) {
+    throw new Error('TwelveData: ' + (j.message || j.code || 'unknown'));
+  }
+  if (!Array.isArray(j.values) || j.values.length === 0) {
+    throw new Error('no_data');
+  }
+
+  // Twelve Data 응답: {datetime, open, high, low, close, volume}
+  // datetime 형식: "2024-01-15 09:30:00" (ET 기준) 또는 "2024-01-15" (일봉/주봉)
+  const candles = j.values.map(v => {
+    const isIntraday = resolution !== 'D' && resolution !== 'W';
+    // 분봉: LightweightCharts는 UTC UNIX timestamp(초)를 받음
+    // TD datetime은 ET → UTC 변환 필요 (+5h 표준 / +4h 서머타임)
+    // 단순하게: 'America/New_York' 로컬 시각으로 파싱 후 UTC timestamp 추출
+    let time;
+    if (isIntraday) {
+      // "2024-01-15 09:30:00" → Date 파싱 (ET로 해석)
+      const dtStr = v.datetime.replace(' ', 'T');
+      // Intl 기반 offset 계산
+      const localDate = new Date(dtStr);
+      // TD는 항상 ET 기준이므로, ET offset을 적용해 UTC로 변환
+      const etOffset = getETOffsetMs(localDate);
+      time = Math.floor((localDate.getTime() - etOffset) / 1000);
+    } else {
+      time = v.datetime.slice(0, 10); // 'YYYY-MM-DD'
+    }
+    return {
+      time,
+      open:   +parseFloat(v.open).toFixed(4),
+      high:   +parseFloat(v.high).toFixed(4),
+      low:    +parseFloat(v.low).toFixed(4),
+      close:  +parseFloat(v.close).toFixed(4),
+      volume: v.volume != null ? parseInt(v.volume) : 0,
+    };
+  });
 
   const bb = calcBollinger(candles.map(cd => cd.close));
   candles.forEach((cd, i) => {
@@ -777,8 +826,8 @@ app.get('/api/chart', async (req, res) => {
   const resolution = req.query.resolution || 'D';
   if (!VALID_RESOLUTIONS.includes(resolution))
     return res.status(400).json({ error: 'invalid resolution', valid: VALID_RESOLUTIONS });
-  if (!FINNHUB_TOKEN)
-    return res.status(503).json({ error: 'FINNHUB_TOKEN 환경변수가 설정되지 않았습니다', symbol });
+  if (!TWELVEDATA_KEY)
+    return res.status(503).json({ error: 'TWELVEDATA_KEY 환경변수가 설정되지 않았습니다', symbol });
   try {
     console.log(`[Chart] ${symbol} res=${resolution} 요청`);
     const data = await fetchChartData(symbol, resolution);
