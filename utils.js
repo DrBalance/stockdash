@@ -11,71 +11,80 @@ export function setHolidaySet(newSet) {
   holidaySet = newSet;
 }
 
-// ── EST 기준 시간 헬퍼
+// ── ET 현재 시각 (로컬 메서드가 ET 값을 반환)
 export function nowEST() {
   return new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
 }
-export function todayEST() { return nowEST().toLocaleDateString('en-CA'); }
-export function estHour()  { const n = nowEST(); return n.getHours() + n.getMinutes() / 60; }
 
-export function isExtendedHours() {
-  const h = estHour(), dow = nowEST().getDay();
-  return dow >= 1 && dow <= 5 && h >= 4 && h < 20;
-}
-
-// ET 기준 Date → 'YYYY-MM-DD' 변환 (UTC 메서드 미사용)
+// ET 기준 Date → 'YYYY-MM-DD' (UTC 메서드 미사용)
 function etISO(d) {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const y   = d.getFullYear();
+  const m   = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
   return `${y}-${m}-${day}`;
 }
 
-// ── 현재 유효한 거래 세션 날짜 반환 (ET 기준만 사용)
-// ET 평일 04:00~20:00 → 오늘 / 그 외(주말·휴장·마감 후) → 다음 거래일
-export function getTargetTradingDay() {
-  const et = nowEST();
-  const dow = et.getDay();
-  const h   = et.getHours() + et.getMinutes() / 60;
-  const iso = etISO(et);
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 핵심: ET 기준 컨텍스트를 한 번에 계산
+// 모든 날짜/장 상태 판단은 이 함수 하나에서 처리
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+export function getETContext() {
+  const et  = nowEST();
+  const dow = et.getDay();                          // 0=일 ... 6=토 (ET 기준)
+  const h   = et.getHours() + et.getMinutes() / 60; // ET 시각 (소수)
+  const todayISO = etISO(et);                        // ET 오늘 날짜
 
-  if (dow >= 1 && dow <= 5 && !holidaySet.has(iso) && h >= 4 && h < 20) {
-    return iso; // 오늘이 유효한 거래 세션
+  const isTradingDay = dow >= 1 && dow <= 5 && !holidaySet.has(todayISO);
+
+  // ── 장 상태
+  let marketState = 'CLOSED';
+  if (isTradingDay) {
+    if      (h >= 4   && h < 9.5) marketState = 'PRE';
+    else if (h >= 9.5 && h < 16)  marketState = 'REGULAR';
+    else if (h >= 16  && h < 20)  marketState = 'AFTER';
+    // 00:00~04:00, 20:00+ → CLOSED
   }
 
-  // 다음 거래일 탐색 (ET 기준)
-  const d = new Date(et);
-  for (let i = 1; i <= 10; i++) {
-    d.setDate(d.getDate() + 1);
-    const nextISO = etISO(d);
-    const nextDow = d.getDay();
-    if (nextDow >= 1 && nextDow <= 5 && !holidaySet.has(nextISO)) return nextISO;
+  // ── 현재 세션의 대상 만기일
+  // ET 평일(비휴장) + 20시 이전(자정~새벽 포함) → 오늘
+  // ET 20시 이후 / 주말 / 휴장 → 다음 거래일
+  let targetISO = null;
+  if (isTradingDay && h < 20) {
+    targetISO = todayISO;
+  } else {
+    const d = new Date(et);
+    for (let i = 1; i <= 10; i++) {
+      d.setDate(d.getDate() + 1);
+      const iso = etISO(d);
+      const dw  = d.getDay();
+      if (dw >= 1 && dw <= 5 && !holidaySet.has(iso)) { targetISO = iso; break; }
+    }
   }
-  return null;
+
+  // ── vcHistory 기록 여부 (ET 평일 04:00~20:00)
+  const isExtended = isTradingDay && h >= 4 && h < 20;
+
+  return { todayISO, targetISO, marketState, isExtended };
 }
 
-// ── 특정 날짜 기준 다음 거래일 계산 (ET 기준만 사용)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 기존 인터페이스 — getETContext() 래핑
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+export const getMarketState      = () => getETContext().marketState;
+export const todayEST            = () => getETContext().todayISO;
+export const isExtendedHours     = () => getETContext().isExtended;
+export const getTargetTradingDay = () => getETContext().targetISO;
+
+// market.js 전용: 특정 날짜 기준 다음 거래일 (ET 기준)
 export function getNextTradingDay(fromDate = nowEST()) {
   const d = new Date(fromDate);
   for (let i = 1; i <= 10; i++) {
     d.setDate(d.getDate() + 1);
     const iso = etISO(d);
-    const dow = d.getDay();
-    if (dow >= 1 && dow <= 5 && !holidaySet.has(iso)) return iso;
+    const dw  = d.getDay();
+    if (dw >= 1 && dw <= 5 && !holidaySet.has(iso)) return iso;
   }
   return null;
-}
-
-// ── 장 상태 판별
-export function getMarketState() {
-  const today = todayEST();
-  if (holidaySet.has(today)) return 'CLOSED';
-  const h = estHour(), dow = nowEST().getDay();
-  if (dow === 0 || dow === 6)    return 'CLOSED';
-  if (h >= 4   && h <  9.5)     return 'PRE';
-  if (h >= 9.5 && h <  16)      return 'REGULAR';
-  if (h >= 16  && h <  20)      return 'AFTER';
-  return 'CLOSED';
 }
 
 // ── 수학 유틸
@@ -83,12 +92,12 @@ export function normPDF(x) {
   return Math.exp(-x * x / 2) / Math.sqrt(2 * Math.PI);
 }
 
-// ── ET(America/New_York) offset → UTC 변환용
-// 서머타임(EDT=-4h) / 표준시(EST=-5h) 자동 감지
+// ── ET offset → UTC 변환용 (서머타임 자동 감지)
 export function getETOffsetMs(date) {
   const utcStr = date.toLocaleString('en-US', { timeZone: 'UTC' });
   const etStr  = date.toLocaleString('en-US', { timeZone: 'America/New_York' });
-  const utcD   = new Date(utcStr);
-  const etD    = new Date(etStr);
-  return utcD.getTime() - etD.getTime();
+  return new Date(utcStr).getTime() - new Date(etStr).getTime();
 }
+
+// ── 하위 호환 (estHour는 내부에서만 쓰였으나 혹시 모를 참조 보호)
+export const estHour = () => { const et = nowEST(); return et.getHours() + et.getMinutes() / 60; };
