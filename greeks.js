@@ -112,7 +112,6 @@ export function computeGreeks(cboeJson) {
 
   return {
     exp: targetISO, spotPrice, strikes, upStrikes, dnStrikes, flipZone, putWall, callWall,
-    isNextDay:  targetISO !== todayISO,
     localGEX:  parseFloat((localGEX / 1e6).toFixed(2)),
     totalGEX:  parseFloat((cum / 1e6).toFixed(2)),
     vanna:     parseFloat((totalVanna / 1e6).toFixed(2)),

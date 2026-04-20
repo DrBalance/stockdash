@@ -85,7 +85,7 @@ async function load0DTE() {
       totalGEX:  (d0.totalGEX || 0) * 1e6,
       pcr:       d0.pcr,
       exp:       d0.exp,
-      isPreview: d0.isPreview || false,
+      isPreview: marketState === 'CLOSED',
       sym,
       upStrikes: d0.upStrikes || [],
       dnStrikes: d0.dnStrikes || [],
