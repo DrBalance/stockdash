@@ -6,7 +6,7 @@ import { WebSocket } from 'ws';
 import { state } from './state.js';
 import { todayEST, getMarketState } from './utils.js';
 import { fetchClosedMarketData, getFinnhubWsState } from './market.js';
-import { fetchCBOEChain } from './greeks.js';
+import { fetchCBOEChain, computeGreeks } from './greeks.js';
 import { fetchChartData, VALID_RESOLUTIONS } from './chart-api.js';
 import { getWss } from './broadcast.js';
 
@@ -49,12 +49,29 @@ export function registerRoutes(app) {
   });
 
   // ── GEX 0DTE (Greeks + Strikes 통합)
-  app.get('/api/gex0dte', (req, res) => {
-    const sym     = (req.query.symbol || 'SPY').toUpperCase();
-    const greeks  = state.greeks[sym];
-    const strikes = state.strikes[sym];
-    if (!greeks || !strikes) return res.json({ error: 'no_data_yet', symbol: sym });
-    res.json({ ...greeks, strikes, source: 'cron_computed' });
+  // 캐시 있으면 즉시 반환, 없으면 CBOE on-demand 계산 후 캐시에 저장
+  app.get('/api/gex0dte', async (req, res) => {
+    const sym = (req.query.symbol || 'SPY').toUpperCase();
+    let greeks  = state.greeks[sym];
+    let strikes = state.strikes[sym];
+
+    if (!greeks || !strikes) {
+      try {
+        console.log('[gex0dte] 캐시 없음 — CBOE on-demand fetch:', sym);
+        const cboeJson = await fetchCBOEChain(sym);
+        const result   = computeGreeks(cboeJson);
+        state.greeks[sym]  = result;
+        state.strikes[sym] = result.strikes;
+        greeks  = result;
+        strikes = result.strikes;
+      } catch (e) {
+        console.error('[gex0dte] on-demand 실패:', e.message);
+        return res.json({ error: e.message, symbol: sym });
+      }
+    }
+
+    const { strikes: _s, ...summary } = greeks;
+    res.json({ ...summary, strikes, source: state.greeks[sym].computedAt ? 'cron_computed' : 'on_demand' });
   });
 
   // ── VC 히스토리 (Vanna/Charm 시계열)
