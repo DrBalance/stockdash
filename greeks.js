@@ -3,7 +3,7 @@
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 import { state } from './state.js';
-import { nowEST, todayEST, getNextTradingDay, isExtendedHours, normPDF } from './utils.js';
+import { nowEST, todayEST, getTargetTradingDay, isExtendedHours, normPDF } from './utils.js';
 import { broadcast } from './broadcast.js';
 import { analyzeVanna } from './vanna_analyzer.js';
 
@@ -32,39 +32,21 @@ export async function fetchCBOEChain(symbol) {
 export function computeGreeks(cboeJson) {
   const spotPrice  = cboeJson.data.current_price;
   const allOptions = cboeJson.data.options;
-  const todayISO   = nowEST().toLocaleDateString('en-CA');
-  const todayKey   = todayISO.slice(2,4) + todayISO.slice(5,7) + todayISO.slice(8,10);
+  // ET 기준으로 현재 유효한 거래 세션 날짜 결정
+  const targetISO = getTargetTradingDay();
+  if (!targetISO) throw new Error('NO_0DTE_DATA');
+  const targetKey = targetISO.slice(2,4) + targetISO.slice(5,7) + targetISO.slice(8,10);
 
-  // 오늘 만기 탐색 → 없으면 다음 거래일 만기 탐색
-  let targetKey = todayKey;
-  let targetISO = todayISO;
-  let parsed = allOptions.filter(o => {
+  const parsed = allOptions.filter(o => {
     const m = o.option.trim().match(/(\d{6})[CP]/);
-    return m && m[1] === todayKey;
+    return m && m[1] === targetKey;
   }).map(o => {
     const m = o.option.trim().match(/(\d{6})([CP])(\d+)/);
     if (!m) return null;
     return { strike: parseInt(m[3]) / 1000, type: m[2], iv: o.iv, oi: o.open_interest, volume: o.volume };
   }).filter(Boolean);
 
-  if (parsed.length === 0) {
-    // 다음 거래일 만기 탐색
-    const nextDay = getNextTradingDay();
-    if (nextDay) {
-      targetISO = nextDay;
-      targetKey = nextDay.slice(2,4) + nextDay.slice(5,7) + nextDay.slice(8,10);
-      parsed = allOptions.filter(o => {
-        const m = o.option.trim().match(/(\d{6})[CP]/);
-        return m && m[1] === targetKey;
-      }).map(o => {
-        const m = o.option.trim().match(/(\d{6})([CP])(\d+)/);
-        if (!m) return null;
-        return { strike: parseInt(m[3]) / 1000, type: m[2], iv: o.iv, oi: o.open_interest, volume: o.volume };
-      }).filter(Boolean);
-      console.log('[Greeks] 오늘 만기 없음 → 다음 거래일', targetISO, '사용');
-    }
-  }
-
+  console.log('[Greeks] 대상 만기일:', targetISO, '옵션 수:', parsed.length);
   if (parsed.length === 0) throw new Error('NO_0DTE_DATA');
 
   const map = {};

@@ -23,14 +23,45 @@ export function isExtendedHours() {
   return dow >= 1 && dow <= 5 && h >= 4 && h < 20;
 }
 
-// ── 다음 거래일 계산 ('YYYY-MM-DD' 반환)
-export function getNextTradingDay(fromDate = new Date()) {
+// ET 기준 Date → 'YYYY-MM-DD' 변환 (UTC 메서드 미사용)
+function etISO(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+// ── 현재 유효한 거래 세션 날짜 반환 (ET 기준만 사용)
+// ET 평일 04:00~20:00 → 오늘 / 그 외(주말·휴장·마감 후) → 다음 거래일
+export function getTargetTradingDay() {
+  const et = nowEST();
+  const dow = et.getDay();
+  const h   = et.getHours() + et.getMinutes() / 60;
+  const iso = etISO(et);
+
+  if (dow >= 1 && dow <= 5 && !holidaySet.has(iso) && h >= 4 && h < 20) {
+    return iso; // 오늘이 유효한 거래 세션
+  }
+
+  // 다음 거래일 탐색 (ET 기준)
+  const d = new Date(et);
+  for (let i = 1; i <= 10; i++) {
+    d.setDate(d.getDate() + 1);
+    const nextISO = etISO(d);
+    const nextDow = d.getDay();
+    if (nextDow >= 1 && nextDow <= 5 && !holidaySet.has(nextISO)) return nextISO;
+  }
+  return null;
+}
+
+// ── 특정 날짜 기준 다음 거래일 계산 (ET 기준만 사용)
+export function getNextTradingDay(fromDate = nowEST()) {
   const d = new Date(fromDate);
   for (let i = 1; i <= 10; i++) {
     d.setDate(d.getDate() + 1);
-    const dow = d.getUTCDay();
-    const iso = d.toISOString().slice(0, 10);
-    if (dow !== 0 && dow !== 6 && !holidaySet.has(iso)) return iso;
+    const iso = etISO(d);
+    const dow = d.getDay();
+    if (dow >= 1 && dow <= 5 && !holidaySet.has(iso)) return iso;
   }
   return null;
 }
