@@ -300,6 +300,8 @@ function render0DTE(d0, newSpot, marketState, preMarketPct, prevClose, timeStr) 
     </div>
   </div>
 
+  <div id="heatmap-container"></div>
+
   <div class="card">
     <div class="card-title">OI 급변 Top5</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px" id="oi-top5-wrap">

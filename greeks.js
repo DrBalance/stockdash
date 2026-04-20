@@ -106,6 +106,7 @@ export function computeGreeks(cboeJson) {
     s.putHedge  = bsGamma * s.putOI  * 100 * spotPrice;
     const netOI = s.callOI - s.putOI;
     const vanna = nd1 * (d2 / sigma) * netOI * 100 * spotPrice;
+    s.vanna = isFinite(vanna) ? parseFloat((vanna / 1e6).toFixed(4)) : 0;
     totalVanna += isFinite(vanna) ? vanna : 0;
     // Charm: T로 통일
     const charm = -nd1 * (r_rate / (sigma * sqrtT) - d2 / (2 * T)) * netOI * 100;
