@@ -5,6 +5,7 @@
 import { state } from './state.js';
 import { nowEST, todayEST, getNextTradingDay, isExtendedHours, normPDF } from './utils.js';
 import { broadcast } from './broadcast.js';
+import { analyzeVanna } from './vanna_analyzer.js';
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // CBOE 옵션체인 fetch
@@ -152,7 +153,9 @@ export async function cronGreeks() {
     try {
       const cboeJson = await fetchCBOEChain(sym);
       const result   = computeGreeks(cboeJson);
-      state.greeks[sym]  = result;
+      // ── Vanna 분석 시그널
+      result.analysis = analyzeVanna(result, state.vcHistory[sym] || []);
+      state.greeks[sym] = result;
 
       // ── OI 증감 계산
       if (state.baseDate !== today) {

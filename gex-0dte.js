@@ -95,6 +95,7 @@ async function load0DTE() {
 
     // 0DTE 영역 렌더
     render0DTE(d0, newSpot, marketState, preMarketPct, prevClose, timeStr);
+    renderHeatmap({ ...d0, symbol: sym }, 'heatmap-container');
 
     // 타임스탬프 표시
     const computedAt = d0.computedAt ? toKST(d0.computedAt) : '—';

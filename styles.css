@@ -272,3 +272,21 @@ tr.flip td{background:rgba(240,136,62,.06)}
 .pp-name-input{flex:1;background:var(--bg3);border:1px solid var(--border);border-radius:5px;
   color:var(--text);padding:5px 8px;font-size:12px;font-family:var(--font);outline:none}
 .pp-name-input:focus{border-color:var(--blue)}
+
+/* ── Vanna Heatmap ── */
+.hm-wrap{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:16px;margin-top:4px}
+.hm-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+.hm-title{font-size:14px;font-weight:700;color:var(--text1)}
+.hm-footer{display:flex;justify-content:space-between;margin-top:8px;font-size:11px;color:var(--text3)}
+.heatmap-table{width:100%;border-collapse:collapse}
+.hm-th{position:sticky;top:0;background:var(--bg3);font-size:11px;font-weight:600;
+  text-transform:uppercase;color:var(--text3);letter-spacing:.05em;padding:6px 10px;
+  border-bottom:1px solid var(--border)}
+.hm-td{padding:5px 10px;border-bottom:1px solid rgba(255,255,255,.04);
+  font-family:var(--mono);font-size:13px;color:var(--text2);transition:background .2s}
+.hm-center{text-align:center}
+.hm-right{text-align:right}
+.badge-orderly{padding:8px 12px;margin-bottom:10px;border-radius:6px;font-size:12px;
+  background:rgba(251,146,60,.1);border:1px solid rgba(251,146,60,.4);color:#fb923c;
+  animation:orderly-pulse 1.5s ease-in-out infinite}
+@keyframes orderly-pulse{0%,100%{opacity:1}50%{opacity:.55}}
