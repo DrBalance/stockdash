@@ -149,6 +149,14 @@ function tick() {
 window.addEventListener('marketStateChanged', ({ detail }) => {
   const { marketState, prevState, targetISO } = detail;
 
+  // 페이지 로드/재시작 시 이미 장중이면 즉시 초기화
+  if (prevState === undefined && (marketState === 'PRE' || marketState === 'REGULAR' || marketState === 'AFTER')) {
+    console.log('[Market] 페이지 로드 시 장중 감지 — 즉시 초기화:', marketState);
+    load0DTE();
+    if (!auto0DTEInterval) auto0DTEInterval = setInterval(load0DTE, 60000);
+    connectWS();
+  }
+
   // CLOSED → PRE: 라이브 모드 전환
   if (prevState === 'CLOSED' && marketState === 'PRE') {
     console.log('[Market] 프리마켓 시작 — 라이브 모드 전환');
