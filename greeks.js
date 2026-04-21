@@ -135,19 +135,16 @@ export function computeGreeks(cboeJson) {
   }
   const strikes = Object.values(map).sort((a, b) => a.strike - b.strike);
 
-  // T 계산 — ET 기준으로 일관되게 처리 (UTC 변환 없음)
-  // ET 14:00 이후로는 T를 고정 (만기까지 2시간):
+  // T 계산 — ET 시각만 사용 (UTC 변환 없음)
+  // ET 14:00 이후로는 T = 2시간 고정:
   // Charm = -nd1 * (...) / T 이므로 T→0 시 폭발하는 수학적 특성이 있음.
-  // 그러나 14:00 이후의 Charm 급등은 지표로서 의미가 없고 노이즈에 가까움.
-  // 따라서 14:00 시점의 T(= 2시간)를 상한으로 고정하여 폭발을 방지함.
+  // 14:00 이후 Charm 급등은 지표로서 의미없는 노이즈이므로 고정.
   // 원본 데이터(OI, IV)는 그대로이며 Vanna/GEX는 영향 없음.
-  const nowET    = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
-  const [ey, em, ed] = targetISO.split('-').map(Number);
-  const expiryET  = new Date(ey, em - 1, ed, 16, 0, 0); // 만기일 ET 16:00
-  const cutoffET  = new Date(ey, em - 1, ed, 14, 0, 0); // Charm 폭발 방지 컷오프 ET 14:00
-  const refET     = nowET > cutoffET ? cutoffET : nowET;
-  const msToExp   = expiryET - refET;
-  const T         = msToExp / (1000 * 60 * 60 * 24 * 365);
+  const nowET     = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
+  const etHour    = nowET.getHours() + nowET.getMinutes() / 60;
+  // ET 14:00 이후면 만기까지 2시간 고정, 이전이면 실제 잔존시간
+  const hoursToExp = etHour < 14 ? (16 - etHour) : 2;
+  const T         = hoursToExp / 24 / 365;
   const sqrtT     = Math.sqrt(T);
   const r_rate = 0.045;
   let totalVanna = 0, totalCharm = 0;
