@@ -3,7 +3,7 @@
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 import cron from 'node-cron';
-import { cronMarket, cronMarketVold, fetchHolidays, fetchSymbols, updatePrevClose, connectFinnhub } from './market.js';
+import { cronMarket, cronMarketOBV, fetchHolidays, fetchSymbols, updatePrevClose, connectFinnhub } from './market.js';
 import { cronGreeks } from './greeks.js';
 
 // VIX/VVIX: 평일 ET 04~20시 매분
@@ -11,9 +11,9 @@ cron.schedule('* 4-20 * * 1-5', async () => {
   try { await cronMarket(); } catch (e) { console.error('[Cron Market]', e.message); }
 }, { timezone: 'America/New_York' });
 
-// VOLD: 평일 ET 정규장(09~16시)만
-cron.schedule('* 9-16 * * 1-5', async () => {
-  try { await cronMarketVold(); } catch (e) { console.error('[Cron VOLD]', e.message); }
+// OBV: 평일 ET 정규장(09~16시)만 — VOLD 대체 (Finnhub WS 실시간 누적값 broadcast)
+cron.schedule('* 9-16 * * 1-5', () => {
+  try { cronMarketOBV(); } catch (e) { console.error('[Cron OBV]', e.message); }
 }, { timezone: 'America/New_York' });
 
 // Greeks: 평일 ET 04~20시 15분마다

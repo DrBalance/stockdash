@@ -31,6 +31,9 @@ export const state = {
   // 4. greeks.js의 Redis 관련 주석 해제
   strikesHistory: {},  // { SPY: { base: {...}, prev: {...} }, QQQ: {...}, IWM: {...} }
 
+  // ── SPY OBV (Finnhub WebSocket 실시간 누적, VOLD 대체) ──
+  obv: { value: 0, lastPrice: null, _sampled: false },
+
   vcHistory: {}, vcHistoryDate: '',
   symbols: [],       // 미국 주식 심볼 목록 (매일 자정 갱신)
   symbolsUpdatedAt: null,
