@@ -13,7 +13,6 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 
 import { state } from './state.js';
-import { getMarketState } from './utils.js';
 import { fetchClosedMarketData, connectFinnhub, fetchHolidays, fetchSymbols, cronMarket, updatePrevClose } from './market.js';
 import { cronGreeks } from './greeks.js';
 import { registerRoutes } from './routes.js';
@@ -43,10 +42,7 @@ initBroadcast(wss);
 wss.on('connection', async (ws) => {
   console.log('[WS] 클라이언트 연결 — 총 ' + wss.clients.size + '개');
   try {
-    const ms = getMarketState();
-    if (ms === 'CLOSED') {
-      await fetchClosedMarketData();
-    }
+    await fetchClosedMarketData();
     ws.send(JSON.stringify({
       type: 'init',
       data: { prices: state.prices, market: state.market },

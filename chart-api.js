@@ -3,9 +3,15 @@
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 import { LRUCache } from 'lru-cache';
-import { getETOffsetMs } from './utils.js';
 
 const TWELVEDATA_KEY = process.env.TWELVEDATA_KEY;
+
+// ET offset 계산 (서머타임 자동 감지)
+function getETOffsetMs(date) {
+  const utcStr = date.toLocaleString('en-US', { timeZone: 'UTC' });
+  const etStr  = date.toLocaleString('en-US', { timeZone: 'America/New_York' });
+  return new Date(utcStr).getTime() - new Date(etStr).getTime();
+}
 
 // Twelve Data interval 매핑
 const TD_INTERVAL = {
@@ -94,7 +100,7 @@ export async function fetchChartData(symbol, resolution) {
     const isIntraday = resolution !== 'D' && resolution !== 'W';
     let time;
     if (isIntraday) {
-      const dtStr   = v.datetime.replace(' ', 'T');
+      const dtStr     = v.datetime.replace(' ', 'T');
       const localDate = new Date(dtStr);
       const etOffset  = getETOffsetMs(localDate);
       time = Math.floor((localDate.getTime() - etOffset) / 1000);

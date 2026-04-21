@@ -4,7 +4,6 @@
 
 import { WebSocket } from 'ws';
 import { state } from './state.js';
-import { todayEST, getMarketState } from './utils.js';
 import { fetchClosedMarketData, getFinnhubWsState } from './market.js';
 import { fetchCBOEChain, computeGreeks } from './greeks.js';
 import { fetchChartData, VALID_RESOLUTIONS } from './chart-api.js';
@@ -21,13 +20,13 @@ export function registerRoutes(app) {
   });
 
   app.get('/api/quotes', async (req, res) => {
-    if (getMarketState() === 'CLOSED') await fetchClosedMarketData();
+    await fetchClosedMarketData();
     res.json(state.prices);
   });
 
   // ── 시장 지표 (VIX/VVIX/VOLD)
   app.get('/api/market', async (req, res) => {
-    if (getMarketState() === 'CLOSED') await fetchClosedMarketData();
+    await fetchClosedMarketData();
     res.json(state.market);
   });
 
@@ -77,7 +76,8 @@ export function registerRoutes(app) {
   // ── VC 히스토리 (Vanna/Charm 시계열)
   app.get('/api/vc_history', (req, res) => {
     const sym = (req.query.symbol || 'SPY').toUpperCase();
-    res.json({ symbol: sym, date: todayEST(), history: state.vcHistory[sym] || [] });
+    const date = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' }); // ET 기준 YYYY-MM-DD
+    res.json({ symbol: sym, date, history: state.vcHistory[sym] || [] });
   });
 
   // ── CBOE 원본 옵션체인 (on-demand)
