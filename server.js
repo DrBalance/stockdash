@@ -45,7 +45,7 @@ wss.on('connection', async (ws) => {
     await fetchClosedMarketData();
     ws.send(JSON.stringify({
       type: 'init',
-      data: { prices: state.prices, market: state.market },
+      data: { prices: state.prices, market: state.market, vcHistory: state.vcHistory },
       ts: new Date().toISOString(),
     }));
   } catch (_) {}

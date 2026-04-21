@@ -316,9 +316,16 @@ function connectWS() {
 }
 
 // ── init: 연결 즉시 전체 상태 수신 ──
-function onWSInit({ prices, market }) {
+function onWSInit({ prices, market, vcHistory: initVC }) {
   if (prices) onWSPrices(prices);
   if (market) onWSMarket(market);
+  // 서버 vcHistory['SPY'] 복원 (재연결 시 히스토리 유지)
+  if (initVC?.SPY?.length) {
+    vcHistory.length = 0;
+    initVC.SPY.forEach(h => vcHistory.push(h));
+    console.log('[WS Init] vcHistory 복원:', vcHistory.length, '개');
+    renderVCChart();
+  }
 
   // CLOSED 시 상황판단 메시지 창에 고지
   const ms = window._marketState || 'REGULAR';
@@ -431,6 +438,21 @@ function onWSGreeks(data) {
     currentD.localGEX = (data.localGEX ?? 0) * 1e6;
     currentD.pcr      = data.pcr      ?? currentD.pcr;
     console.log('[WS Greeks]', sym, 'vanna=', data.vanna, 'charm=', data.charm);
+
+    // vcHistory push (차트용)
+    if (data.vanna != null && data.charm != null) {
+      vcHistory.push({
+        iso:   data.computedAt ?? new Date().toISOString(),
+        vanna: data.vanna,
+        charm: data.charm,
+        vix:   window._lastMarket?.vix  ?? null,
+        vv:    window._lastMarket?.vv   ?? null,
+        vold:  window._lastMarket?.vold ?? null,
+        spot:  currentD.spotPrice       ?? null,
+      });
+      if (vcHistory.length > 300) vcHistory.shift();
+      renderVCChart();
+    }
   }
 }
 
