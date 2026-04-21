@@ -5,6 +5,7 @@
 import { WebSocket } from 'ws';
 import { state } from './state.js';
 import { fetchClosedMarketData, getFinnhubWsState } from './market.js';
+import { getHolidaySet } from './market.js';
 import { fetchCBOEChain, computeGreeks } from './greeks.js';
 import { fetchChartData, VALID_RESOLUTIONS } from './chart-api.js';
 import { getWss } from './broadcast.js';
@@ -133,5 +134,10 @@ export function registerRoutes(app) {
       console.error(`[Chart] ${symbol} res=${resolution} 실패:`, e.message);
       res.status(500).json({ error: e.message, symbol, resolution });
     }
+  });
+
+  // ── 휴장일 목록 ──
+  app.get('/api/holidays', (req, res) => {
+  res.json({ holidays: [...getHolidaySet()] });
   });
 }

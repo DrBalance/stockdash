@@ -22,14 +22,19 @@ const holidaySet = new Set(); // 'YYYY-MM-DD'
 
 async function fetchHolidays() {
   try {
-    const r = await fetch(
+   /* const r = await fetch(
       `https://finnhub.io/api/v1/stock/market-holiday?exchange=US&token=${FINNHUB_TOKEN}`,
       { signal: AbortSignal.timeout(8000) }
     );
     const j = await r.json();
     (j.data || [])
       .filter(h => !h.atNormalTime)
-      .forEach(h => holidaySet.add(h.eventDay));
+      .forEach(h => holidaySet.add(h.eventDay)); */
+    const r = await fetch(`${PROXY}/api/holidays`,
+    { signal: AbortSignal.timeout(8000) }
+    );
+    const j = await r.json();
+    (j.holidays || []).forEach(d => holidaySet.add(d));
     console.log('[Holiday] 로드 완료:', holidaySet.size, '일');
   } catch (e) {
     console.warn('[Holiday] 로드 실패 — 휴장일 체크 없이 진행:', e.message);
