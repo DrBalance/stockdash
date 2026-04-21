@@ -243,6 +243,8 @@ export async function fetchHolidays() {
   }
 }
 
+export function getHolidaySet() { return holidaySet; }
+
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // 심볼 목록 (Finnhub + ETF)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
