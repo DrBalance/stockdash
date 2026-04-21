@@ -19,6 +19,46 @@ let holidaySet = new Set();
 let finnhubWs = null;
 let finnhubReconnectTimer = null;
 
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Yahoo 폴백 — 프리/애프터마켓 현재가 폴링
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+let yahooFallbackTimer = null;
+
+// ET 기준 시간외 거래 여부 판별 (프리 04:00~09:30 / 애프터 16:00~20:00)
+function isExtendedHours() {
+  const fmt = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York', hour12: false,
+    hour: '2-digit', minute: '2-digit',
+  }).formatToParts(new Date());
+  const h = +fmt.find(p => p.type === 'hour').value;
+  const m = +fmt.find(p => p.type === 'minute').value;
+  const total = h * 60 + m;
+  return (total >= 240 && total < 570)    // 04:00~09:30 프리마켓
+      || (total >= 960 && total < 1200);  // 16:00~20:00 애프터마켓
+}
+
+async function pollYahooPrices() {
+  const updated = {};
+  for (const sym of WATCH_SYMBOLS) {
+    try {
+      const q = await fetchYahooQuote(sym);
+      if (q.price == null) continue;
+      const prev = state.prices[sym];
+      state.prices[sym] = {
+        price:     q.price,
+        prevClose: q.prevClose ?? prev?.prevClose ?? null,
+        change:    q.changePct,
+        updatedAt: new Date().toISOString(),
+      };
+      updated[sym] = state.prices[sym];
+    } catch (e) { console.warn('[YahooPoll]', sym, e.message); }
+  }
+  if (Object.keys(updated).length > 0) {
+    broadcast('prices', updated);
+    console.log('[YahooPoll] broadcast:', Object.keys(updated).join(', '));
+  }
+}
+
 export function connectFinnhub() {
   if (!FINNHUB_TOKEN) {
     console.warn('[Finnhub] FINNHUB_TOKEN 없음');
@@ -29,6 +69,12 @@ export function connectFinnhub() {
 
   finnhubWs.on('open', () => {
     console.log('[Finnhub] 연결 성공');
+    // Yahoo 폴백 중이었으면 중단
+    if (yahooFallbackTimer) {
+      clearInterval(yahooFallbackTimer);
+      yahooFallbackTimer = null;
+      console.log('[Finnhub] Yahoo 폴백 중단 — Finnhub 실시간 전환');
+    }
     for (const sym of WATCH_SYMBOLS) {
       finnhubWs.send(JSON.stringify({ type: 'subscribe', symbol: sym }));
     }
@@ -58,12 +104,23 @@ export function connectFinnhub() {
   });
 
   finnhubWs.on('close', () => {
-    console.warn('[Finnhub] 종료 — 30초 후 재연결');
-    if (!finnhubReconnectTimer) {
-      finnhubReconnectTimer = setTimeout(() => {
-        finnhubReconnectTimer = null;
-        connectFinnhub();
-      }, 30000);
+    console.warn('[Finnhub] 종료');
+    if (isExtendedHours()) {
+      // 프리/애프터마켓 → Yahoo 폴백으로 전환
+      console.log('[Finnhub] 시간외 거래 감지 → Yahoo 폴백 시작 (30초 간격)');
+      pollYahooPrices(); // 즉시 1회 실행
+      if (!yahooFallbackTimer) {
+        yahooFallbackTimer = setInterval(pollYahooPrices, 30000);
+      }
+    } else {
+      // 정규장 → 기존대로 재연결
+      console.warn('[Finnhub] 정규장 → 30초 후 재연결');
+      if (!finnhubReconnectTimer) {
+        finnhubReconnectTimer = setTimeout(() => {
+          finnhubReconnectTimer = null;
+          connectFinnhub();
+        }, 30000);
+      }
     }
   });
 

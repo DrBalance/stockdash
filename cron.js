@@ -3,7 +3,7 @@
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 import cron from 'node-cron';
-import { cronMarket, cronMarketVold, fetchHolidays, fetchSymbols, updatePrevClose } from './market.js';
+import { cronMarket, cronMarketVold, fetchHolidays, fetchSymbols, updatePrevClose, connectFinnhub } from './market.js';
 import { cronGreeks } from './greeks.js';
 
 // VIX/VVIX: 평일 ET 04~20시 매분
@@ -29,6 +29,13 @@ cron.schedule('0 20 * * 1-5', async () => {
 // prevClose: 장 마감 직후 1회
 cron.schedule('5 16 * * 1-5', async () => {
   try { await updatePrevClose(); } catch (e) { console.error('[prevClose]', e.message); }
+}, { timezone: 'America/New_York' });
+
+// Finnhub 재연결: 정규장 시작 직후 (ET 09:30)
+// 프리마켓 동안 Yahoo 폴백으로 전환되어 있던 것을 Finnhub 실시간으로 복귀
+cron.schedule('30 9 * * 1-5', async () => {
+  console.log('[Cron] 정규장 시작 — Finnhub 재연결 시도');
+  try { connectFinnhub(); } catch (e) { console.error('[Cron Finnhub]', e.message); }
 }, { timezone: 'America/New_York' });
 
 // 휴장일 목록: 매일 자정 ET 갱신
