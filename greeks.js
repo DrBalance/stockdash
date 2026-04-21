@@ -3,9 +3,68 @@
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 import { state } from './state.js';
-import { nowEST, todayEST, getTargetTradingDay, isExtendedHours, normPDF } from './utils.js';
 import { broadcast } from './broadcast.js';
 import { analyzeVanna } from './vanna_analyzer.js';
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// [TODO: Railway Volume 도입 시 아래 주석 해제]
+// import fs from 'fs/promises';
+// const PERSISTENCE_PATH = '/data/base_strikes.json';
+//
+// async function loadBaseSnap() {
+//   try {
+//     const raw = await fs.readFile(PERSISTENCE_PATH, 'utf8');
+//     const data = JSON.parse(raw);
+//     // 날짜가 오늘과 같을 때만 복구
+//     const todayET = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+//     for (const sym of Object.keys(data)) {
+//       if (data[sym]?.base?.date === todayET) {
+//         if (!state.strikesHistory[sym]) state.strikesHistory[sym] = {};
+//         state.strikesHistory[sym].base = data[sym].base;
+//         console.log('[Greeks] baseSnap 복구:', sym, data[sym].base.iso);
+//       }
+//     }
+//   } catch (_) { /* 파일 없으면 무시 */ }
+// }
+//
+// async function saveBaseSnap() {
+//   try {
+//     const payload = {};
+//     for (const sym of ['SPY', 'QQQ', 'IWM']) {
+//       if (state.strikesHistory[sym]?.base) payload[sym] = { base: state.strikesHistory[sym].base };
+//     }
+//     await fs.writeFile(PERSISTENCE_PATH, JSON.stringify(payload), 'utf8');
+//   } catch (e) { console.error('[Greeks] baseSnap 저장 실패:', e.message); }
+// }
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// [TODO: Upstash Redis 도입 시 아래 주석 해제 (Railway Volume 대안)]
+// import { Redis } from '@upstash/redis';
+// const redis = new Redis({ url: process.env.UPSTASH_URL, token: process.env.UPSTASH_TOKEN });
+//
+// async function loadBaseSnap() {
+//   const todayET = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+//   for (const sym of ['SPY', 'QQQ', 'IWM']) {
+//     try {
+//       const data = await redis.get('base_snap_' + sym);
+//       if (data?.base?.date === todayET) {
+//         if (!state.strikesHistory[sym]) state.strikesHistory[sym] = {};
+//         state.strikesHistory[sym].base = data.base;
+//         console.log('[Greeks] Redis baseSnap 복구:', sym, data.base.iso);
+//       }
+//     } catch (_) {}
+//   }
+// }
+//
+// async function saveBaseSnap(sym) {
+//   try {
+//     await redis.set('base_snap_' + sym, { base: state.strikesHistory[sym].base }, { ex: 86400 });
+//   } catch (e) { console.error('[Greeks] Redis baseSnap 저장 실패:', sym, e.message); }
+// }
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+function normPDF(x) {
+  return Math.exp(-x * x / 2) / Math.sqrt(2 * Math.PI);
+}
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // CBOE 옵션체인 fetch
@@ -27,13 +86,31 @@ export async function fetchCBOEChain(symbol) {
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// CBOE 심볼에서 가장 가까운 만기일 추출
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+function nearestExpiry(allOptions) {
+  const today = new Date();
+  const dates = new Set();
+  for (const o of allOptions) {
+    const m = o.option.trim().match(/(\d{2})(\d{2})(\d{2})[CP]/);
+    if (!m) continue;
+    dates.add(`20${m[1]}-${m[2]}-${m[3]}`);
+  }
+  // 오늘 이후 가장 가까운 날짜
+  const sorted = [...dates].sort();
+  const todayISO = today.toISOString().slice(0, 10);
+  return sorted.find(d => d >= todayISO) ?? sorted[0];
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Greeks 계산
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 export function computeGreeks(cboeJson) {
   const spotPrice  = cboeJson.data.current_price;
   const allOptions = cboeJson.data.options;
-  // ET 기준으로 현재 유효한 거래 세션 날짜 결정
-  const targetISO = getTargetTradingDay();
+
+  // CBOE 응답에서 직접 가장 가까운 만기일 추출
+  const targetISO = nearestExpiry(allOptions);
   if (!targetISO) throw new Error('NO_0DTE_DATA');
   const targetKey = targetISO.slice(2,4) + targetISO.slice(5,7) + targetISO.slice(8,10);
 
@@ -59,8 +136,6 @@ export function computeGreeks(cboeJson) {
   }
   const strikes = Object.values(map).sort((a, b) => a.strike - b.strike);
 
-  // 만기일 16:00 ET(장 마감) 기준으로 T 계산
-  // 4~10월(EDT) → UTC 20:00 / 11~3월(EST) → UTC 21:00
   function getExpiryCloseUTC(iso) {
     const [y, m, d] = iso.split('-').map(Number);
     const utcHour = (m >= 4 && m <= 10) ? 20 : 21;
@@ -68,10 +143,7 @@ export function computeGreeks(cboeJson) {
   }
   const expiryClose = getExpiryCloseUTC(targetISO);
   const msToExp = expiryClose - new Date();
-  // 장중: 남은 시간 기준 / 장 마감 후: 최솟값 0DTE 처리 (1시간 = 1/8760)
-  const T = msToExp > 0
-    ? msToExp / (1000 * 60 * 60 * 24 * 365)
-    : 1 / 8760;
+  const T = msToExp > 0 ? msToExp / (1000 * 60 * 60 * 24 * 365) : 1 / 8760;
   const sqrtT  = Math.sqrt(T);
   const r_rate = 0.045;
   let totalVanna = 0, totalCharm = 0;
@@ -90,7 +162,6 @@ export function computeGreeks(cboeJson) {
     const vanna = nd1 * (d2 / sigma) * netOI * 100 * spotPrice;
     s.vanna = isFinite(vanna) ? parseFloat((vanna / 1e6).toFixed(4)) : 0;
     totalVanna += isFinite(vanna) ? vanna : 0;
-    // Charm: T로 통일
     const charm = -nd1 * (r_rate / (sigma * sqrtT) - d2 / (2 * T)) * netOI * 100;
     totalCharm += isFinite(charm) ? charm : 0;
   }
@@ -123,59 +194,93 @@ export function computeGreeks(cboeJson) {
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// ET 시각 헬퍼 — 현재 ET 기준 시/분 반환
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+function nowET() {
+  const now = new Date();
+  const etStr = now.toLocaleString('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: 'numeric', hour12: false });
+  const [h, m] = etStr.split(':').map(Number);
+  return { h, m, totalMin: h * 60 + m };
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // cronGreeks — SPY/QQQ/IWM 15분마다
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 export async function cronGreeks() {
-  const symbols = ['SPY', 'QQQ', 'IWM'];
-  const today   = todayEST();
-  const nowIso  = new Date().toISOString();
-  if (state.vcHistoryDate !== today) { state.vcHistory = {}; state.vcHistoryDate = today; }
+  const symbols  = ['SPY', 'QQQ', 'IWM'];
+  const nowIso   = new Date().toISOString();
+  const todayET  = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+  const { totalMin } = nowET();
+  const isAfterOpen = totalMin >= 9 * 60;  // 09:00 ET 이후 여부
 
   for (const sym of symbols) {
     try {
       const cboeJson = await fetchCBOEChain(sym);
       const result   = computeGreeks(cboeJson);
-      // ── Vanna 분석 시그널
       result.analysis = analyzeVanna(result, state.vcHistory[sym] || []);
-      state.greeks[sym] = result;
 
-      // ── OI 증감 계산
-      if (state.baseDate !== today) {
-        state.baseStrikes = {};
-        state.baseDate    = today;
+      // ── strikesHistory 초기화 ──
+      if (!state.strikesHistory[sym]) state.strikesHistory[sym] = {};
+      const hist = state.strikesHistory[sym];
+
+      // ── prevSnap: 항상 직전 스냅샷으로 교체 ──
+      const prevSnap = hist.prev ?? null;
+
+      // ── baseSnap: 당일 09:00 ET 이후 첫 스냅샷만 저장, 이후 고정 ──
+      if (isAfterOpen && (!hist.base || hist.base.date !== todayET)) {
+        hist.base = {
+          date: todayET,
+          iso:  nowIso,
+          strikes: result.strikes.map(s => ({ strike: s.strike, callOI: s.callOI, putOI: s.putOI })),
+        };
+        console.log('[Greeks] baseSnap 확정:', sym, nowIso);
+        // [TODO: Railway Volume 도입 시] await saveBaseSnap();
+        // [TODO: Upstash Redis 도입 시]  await saveBaseSnap(sym);
       }
-      const prevMap = {};
-      const baseMap = {};
-      if (state.prevStrikes[sym]) {
-        for (const s of state.prevStrikes[sym]) prevMap[s.strike] = s;
-      }
-      if (state.baseStrikes[sym]) {
-        for (const s of state.baseStrikes[sym]) baseMap[s.strike] = s;
-      }
+      const baseSnap = (hist.base?.date === todayET) ? hist.base : null;
+
+      // ── OI 증감 계산 ──
+      const prevMap = {}, baseMap = {};
+      if (prevSnap) for (const s of prevSnap.strikes) prevMap[s.strike] = s;
+      if (baseSnap) for (const s of baseSnap.strikes) baseMap[s.strike] = s;
+
       for (const s of result.strikes) {
         const prev = prevMap[s.strike];
         const base = baseMap[s.strike];
+        // Diff15: prevSnap 없으면 0 (서버 시작 첫 1회, 자연스럽게 처리)
         s.callOIDiff15  = prev ? s.callOI - prev.callOI : 0;
         s.putOIDiff15   = prev ? s.putOI  - prev.putOI  : 0;
-        s.callOIDiffCum = base ? s.callOI - base.callOI : 0;
-        s.putOIDiffCum  = base ? s.putOI  - base.putOI  : 0;
-      }
-      // prevStrikes 갱신
-      state.prevStrikes[sym] = result.strikes.map(s => ({ strike: s.strike, callOI: s.callOI, putOI: s.putOI }));
-      // baseStrikes: 당일 첫 번째 Cron만 저장
-      if (!state.baseStrikes[sym]) {
-        state.baseStrikes[sym] = result.strikes.map(s => ({ strike: s.strike, callOI: s.callOI, putOI: s.putOI }));
+        // DiffCum: baseSnap 없으면 null (09:00 ET 이전 프리마켓 구간)
+        s.callOIDiffCum = base ? s.callOI - base.callOI : null;
+        s.putOIDiffCum  = base ? s.putOI  - base.putOI  : null;
       }
 
+      // ── prevSnap 갱신 (Diff 계산 완료 후) ──
+      hist.prev = {
+        iso: nowIso,
+        strikes: result.strikes.map(s => ({ strike: s.strike, callOI: s.callOI, putOI: s.putOI })),
+      };
+
+      // ── state 저장 (Diff 계산 완료 후) ──
+      state.greeks[sym]  = result;
       state.strikes[sym] = result.strikes;
-      if (isExtendedHours()) {
-        if (!state.vcHistory[sym]) state.vcHistory[sym] = [];
-        state.vcHistory[sym].push({ iso: nowIso, vanna: result.vanna, charm: result.charm, vix: state.market.vix, vold: state.market.vold, spot: result.spotPrice });
-        if (state.vcHistory[sym].length > 200) state.vcHistory[sym] = state.vcHistory[sym].slice(-200);
-      }
+
+      // ── vcHistory 기록 ──
+      if (!state.vcHistory[sym]) state.vcHistory[sym] = [];
+      state.vcHistory[sym].push({
+        iso:   nowIso,
+        vanna: result.vanna,
+        charm: result.charm,
+        vix:   state.market.vix,
+        vold:  state.market.vold,
+        spot:  result.spotPrice,
+      });
+      if (state.vcHistory[sym].length > 200) state.vcHistory[sym] = state.vcHistory[sym].slice(-200);
+
       const { strikes, ...summary } = result;
       broadcast('greeks', { symbol: sym, ...summary });
-      console.log('[Cron Greeks] ' + sym + ' — vanna=' + result.vanna + ' charm=' + result.charm);
+      console.log('[Cron Greeks] ' + sym + ' — vanna=' + result.vanna + ' charm=' + result.charm
+        + ' | Diff15=' + (prevSnap ? 'O' : '최초') + ' DiffCum=' + (baseSnap ? 'O' : '장전'));
     } catch (e) { console.error('[Cron Greeks] ' + sym + ' 실패:', e.message); }
   }
 }

@@ -167,22 +167,12 @@ function renderForceSidebar(force) {
 // VannaCharm 차트 렌더 (CBOE 기반 누적)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-// 섬머타임 감지 및 시간 변환은 DOMContentLoaded 위 toKST / isEDT 함수로 통합
-// estToKST는 하위 호환 래퍼로 유지 (차트 내 직접 참조 제거됨)
-function estToKST(timeStr) {
-  if (!timeStr || !timeStr.includes(':')) return timeStr;
-  const [h, m] = timeStr.split(':').map(Number);
-  const offset = isEDT() ? 13 : 14;
-  const kstH = (h + offset) % 24;
-  return `${String(kstH).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
-}
-
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // 멀티페인 차트 헬퍼
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 let vcPaneVC = null, vcPaneVV = null, vcPaneOBV = null;
 let vcZoomLevel = 4; // 기본 2H (16시간 전체 기준 8배)
-let vcTotalSlots = 192; // 전체 시간축 슬롯 수 (16시간 × 12)
+let vcTotalSlots = 150;  // 144슬롯(04:00~16:00 ET) + 6슬롯(30분) 여유
 
 // 시간범위 → zoom 레벨 변환 (전체 16시간 기준)
 const VC_RANGE_ZOOM = { '2h': 8, '4h': 4, '8h': 2, '1d': 1, 'all': 0.5 };
@@ -198,7 +188,7 @@ function setVCRange(range) {
     const btn = document.getElementById('vcrange-' + r);
     if (btn) btn.className = 'vc-range-btn' + (r === range ? ' active' : '');
   });
-  renderVCChart(); // ← OI 차트와 동일하게 재렌더
+  updateVCZoom(); // 너비·스크롤만 조정 (차트 재생성 불필요)
 }
 
 function onVCSlider(val) {
@@ -209,7 +199,7 @@ function onVCSlider(val) {
     const btn = document.getElementById('vcrange-' + r);
     if (btn) btn.className = 'vc-range-btn';
   });
-  renderVCChart(); // ← OI 차트와 동일하게 재렌더
+  updateVCZoom(); // 너비·스크롤만 조정 (차트 재생성 불필요)
 }
 
 // ── 확대/스크롤만 조정 (차트 재렌더 없음) ──
@@ -220,14 +210,26 @@ function updateVCZoom() {
 
   const baseW = wrap.clientWidth || window.innerWidth - 56;
   const newW = Math.round(baseW * vcZoomLevel);
-  inner.style.width = newW + 'px';
 
-  // 현재 시간 위치 계산 → 화면 중앙에 오도록 스크롤 (UTC ISO 기준)
+  // inner + 각 pane-wrap 너비 동시 설정
+  inner.style.width = newW + 'px';
+  ['vc-pane-vc-wrap', 'vc-pane-vv-wrap', 'vc-pane-obv-wrap'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.width = newW + 'px';
+  });
+
+  // Chart.js 인스턴스에 크기 변경 알림 (재렌더 없이 resize만)
+  if (vcPaneVC)  vcPaneVC.resize();
+  if (vcPaneVV)  vcPaneVV.resize();
+  if (vcPaneOBV) vcPaneOBV.resize();
+
+  // 현재 시간 위치 계산 → 화면 중앙에 오도록 스크롤
+  // PRE_START_EST=4(ET 04:00), vcTotalSlots 사용 (renderVCChart 지역변수 참조 제거)
   const nowMs = Date.now();
   const etOff = new Date().toLocaleString('en-US', { timeZone: 'America/New_York', timeZoneName: 'short' }).includes('EDT') ? 4 : 5;
   const todayEstStr = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
-  const preMs = new Date(`${todayEstStr}T${String(PRE_START_EST + etOff).padStart(2,'0')}:00:00Z`).getTime();
-  const totalMs = TOTAL_SLOTS * 5 * 60000;
+  const preMs = new Date(`${todayEstStr}T${String(4 + etOff).padStart(2, '0')}:00:00Z`).getTime();
+  const totalMs = vcTotalSlots * 5 * 60000;  // 전역 vcTotalSlots 사용
   const nowRatio = Math.max(0, Math.min(1, (nowMs - preMs) / totalMs));
 
   // 현재 시간이 화면 중앙에 오도록
@@ -438,7 +440,7 @@ function renderVCChart() {
       const { ctx, chartArea, scales } = chart;
       if (!chartArea || !scales.x) return;
       // 개장 시각 KST (EST 09:30 → KST 변환)
-      const openKST = estToKST('09:30');
+      const openKST = window._openKST;
       const openIdx = labels.findIndex(t => t >= openKST);
       if (openIdx < 0) return;
       ctx.save();
@@ -673,14 +675,13 @@ function updateVCSignalBar(slice) {
   if (textEl) { textEl.textContent = msg; textEl.style.color = color; textEl.style.fontWeight = signalType !== 'neutral' ? '700' : '500'; }
 
   // 실시간 판단 패널 push (중요 신호만)
-  const now = new Date();
-  const evTimeStr = now.toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit', timeZone:'America/New_York' });
+  const evTimeStr = window._kstStr || toKST(new Date().toISOString());
   if (signalType === 'red' || signalType === 'green') {
-    liveEvents.unshift({ time: evTimeStr + ' ET', cls: signalType === 'red' ? 'le-warn' : 'le-good', msg });
+    liveEvents.unshift({ time: evTimeStr + ' KST', cls: signalType === 'red' ? 'le-warn' : 'le-good', msg });
     if (liveEvents.length > 15) liveEvents = liveEvents.slice(0, 15);
   }
   if (signalType === 'yellow' && hedgeSignal) {
-    liveEvents.unshift({ time: evTimeStr + ' ET', cls: 'le-warn', msg });
+    liveEvents.unshift({ time: evTimeStr + ' KST', cls: 'le-warn', msg });
     if (liveEvents.length > 15) liveEvents = liveEvents.slice(0, 15);
   }
 }

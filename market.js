@@ -4,13 +4,14 @@
 
 import { WebSocket } from 'ws';
 import { state, WATCH_SYMBOLS } from './state.js';
-import {
-  nowEST, todayEST, getMarketState, getNextTradingDay,
-  holidaySet, setHolidaySet,
-} from './utils.js';
 import { broadcast } from './broadcast.js';
 
 const FINNHUB_TOKEN = process.env.FINNHUB_TOKEN;
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 휴장일 (fetchHolidays에서만 갱신)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+let holidaySet = new Set();
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // 1. Finnhub WebSocket — 현재가 실시간
@@ -37,25 +38,18 @@ export function connectFinnhub() {
     try {
       const msg = JSON.parse(raw.toString());
       if (msg.type !== 'trade' || !Array.isArray(msg.data)) return;
-      const ms = getMarketState();
       const updated = {};
       for (const trade of msg.data) {
         const sym = trade.s, price = trade.p;
         if (!sym || price == null) continue;
         const prev = state.prices[sym];
-        // CLOSED 시: 현재가 대신 prevClose 사용
-        const displayPrice = ms === 'CLOSED'
-          ? (prev?.prevClose ?? price)
-          : price;
         state.prices[sym] = {
-          price:       displayPrice,
-          prevClose:   prev?.prevClose ?? null,
-          change: prev?.prevClose != null
-            ? +((displayPrice - prev.prevClose) / prev.prevClose * 100).toFixed(2)
+          price,
+          prevClose:  prev?.prevClose ?? null,
+          change:     prev?.prevClose != null
+            ? +((price - prev.prevClose) / prev.prevClose * 100).toFixed(2)
             : null,
-          marketState:     ms,
-          nextTradingDay:  ms === 'CLOSED' ? getNextTradingDay() : null,
-          updatedAt:       new Date().toISOString(),
+          updatedAt:  new Date().toISOString(),
         };
         updated[sym] = state.prices[sym];
       }
@@ -109,7 +103,6 @@ export async function fetchYahooQuote(symbol) {
 // CLOSED 시 현재가(종가) + VIX/VVIX 1회 fetch
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 export async function fetchClosedMarketData() {
-  // 현재가 — Yahoo v8 chart range=1d
   for (const sym of WATCH_SYMBOLS) {
     try {
       const r = await fetch(
@@ -125,18 +118,14 @@ export async function fetchClosedMarketData() {
         ? +((price - prevClose) / prevClose * 100).toFixed(2)
         : null;
       console.log(`[ClosedData] ${sym} price=${price} prevClose=${prevClose} changePct=${changePct}`);
-      if (!state.prices[sym]) state.prices[sym] = {};
       state.prices[sym] = {
         price, prevClose,
-        change:         changePct,
-        marketState:    'CLOSED',
-        nextTradingDay: getNextTradingDay(),
-        updatedAt:      new Date().toISOString(),
+        change:    changePct,
+        updatedAt: new Date().toISOString(),
       };
     } catch (e) { console.warn('[ClosedData] ' + sym + ' 실패:', e.message); }
   }
 
-  // VIX / VVIX
   try {
     const q = await fetchYahooQuote('^VIX');
     if (q.price != null) { state.market.vix = parseFloat(q.price.toFixed(2)); state.market.vixChangePct = q.changePct; }
@@ -146,11 +135,9 @@ export async function fetchClosedMarketData() {
     if (q.price != null) { state.market.vvix = parseFloat(q.price.toFixed(2)); state.market.vvixChangePct = q.changePct; }
   } catch (e) { console.warn('[ClosedData] VVIX 실패:', e.message); }
 
-  state.market.vold           = null;
-  state.market.marketState    = 'CLOSED';
-  state.market.nextTradingDay = getNextTradingDay();
-  state.market.updatedAt      = new Date().toISOString();
-  console.log('[ClosedData] 완료 — nextTradingDay:', getNextTradingDay());
+  state.market.vold      = null;
+  state.market.updatedAt = new Date().toISOString();
+  console.log('[ClosedData] 완료');
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -170,11 +157,9 @@ export async function updatePrevClose() {
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// cronMarket — VIX / VVIX / VOLD (1분마다)
+// cronMarket — VIX / VVIX / VV (평일 04~20시 매분)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 export async function cronMarket() {
-  const ms = getMarketState();
-  const today = todayEST();
   const nowIso = new Date().toISOString();
 
   let vixNow = null, vixChangePct = null;
@@ -191,32 +176,9 @@ export async function cronMarket() {
     console.log('[Cron] VVIX:', vvixNow, '(' + vvixChangePct + '%)');
   } catch (e) { console.warn('[Cron] VVIX 실패:', e.message); }
 
-  let uvolNow = null, dvolNow = null, voldNow = null;
-
-  // CLOSED 시: VOLD는 null(—) 처리
-  if (ms !== 'CLOSED') {
-    try { const q = await fetchYahooQuote('C:UVOL'); uvolNow = q.volume ?? q.price; console.log('[Cron] UVOL:', uvolNow); }
-    catch (e) { console.warn('[Cron] UVOL 실패:', e.message); }
-    try { const q = await fetchYahooQuote('C:DVOL'); dvolNow = q.volume ?? q.price; console.log('[Cron] DVOL:', dvolNow); }
-    catch (e) { console.warn('[Cron] DVOL 실패:', e.message); }
-
-    if (uvolNow != null && dvolNow != null) {
-      const calculated = uvolNow - dvolNow;
-      if (ms === 'PRE') {
-        voldNow = 0;
-      } else if (ms === 'REGULAR') {
-        voldNow = calculated;
-      } else {
-        voldNow = calculated !== 0 ? calculated : state.market.vold;
-      }
-      console.log('[Cron] VOLD:', voldNow, '(' + ms + ')');
-    }
-  }
-
   // VIX Velocity (VV)
   let vv = null;
   if (vixNow != null) {
-    if (state.vixHistoryDate !== today) { state.vixHistory = []; state.vixHistoryDate = today; }
     if (state.vixHistory.length >= 1) {
       const prev = state.vixHistory[state.vixHistory.length - 1];
       const elapsedMin = (new Date(nowIso) - new Date(prev.iso)) / 60000 || 1;
@@ -227,20 +189,39 @@ export async function cronMarket() {
   }
 
   state.market = {
-    vix:          vixNow  != null ? parseFloat(vixNow.toFixed(2))  : state.market.vix,
-    vixChangePct: vixChangePct  != null ? vixChangePct  : state.market.vixChangePct,
-    vvix:         vvixNow != null ? parseFloat(vvixNow.toFixed(2)) : state.market.vvix,
-    vvixChangePct:vvixChangePct != null ? vvixChangePct : state.market.vvixChangePct,
-    vv:           vv      != null ? vv                             : state.market.vv,
-    vold:         ms === 'CLOSED' ? null : (voldNow != null ? Math.round(voldNow) : state.market.vold),
-    uvol:         uvolNow != null ? Math.round(uvolNow) : state.market.uvol,
-    dvol:         dvolNow != null ? Math.round(dvolNow) : state.market.dvol,
-    marketState:    ms,
-    nextTradingDay: ms === 'CLOSED' ? getNextTradingDay() : null,
+    ...state.market,
+    vix:           vixNow      != null ? parseFloat(vixNow.toFixed(2))  : state.market.vix,
+    vixChangePct:  vixChangePct  != null ? vixChangePct                 : state.market.vixChangePct,
+    vvix:          vvixNow     != null ? parseFloat(vvixNow.toFixed(2)) : state.market.vvix,
+    vvixChangePct: vvixChangePct != null ? vvixChangePct                : state.market.vvixChangePct,
+    vv:            vv          != null ? vv                             : state.market.vv,
     updatedAt: nowIso,
   };
 
   broadcast('market', state.market);
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// cronMarketVold — UVOL/DVOL (정규장 09~16시만)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+export async function cronMarketVold() {
+  let uvolNow = null, dvolNow = null;
+  try { const q = await fetchYahooQuote('C:UVOL'); uvolNow = q.volume ?? q.price; console.log('[Cron] UVOL:', uvolNow); }
+  catch (e) { console.warn('[Cron] UVOL 실패:', e.message); }
+  try { const q = await fetchYahooQuote('C:DVOL'); dvolNow = q.volume ?? q.price; console.log('[Cron] DVOL:', dvolNow); }
+  catch (e) { console.warn('[Cron] DVOL 실패:', e.message); }
+
+  if (uvolNow != null && dvolNow != null) {
+    const vold = Math.round(uvolNow - dvolNow);
+    console.log('[Cron] VOLD:', vold);
+    state.market = {
+      ...state.market,
+      vold,
+      uvol: Math.round(uvolNow),
+      dvol: Math.round(dvolNow),
+    };
+    broadcast('market', state.market);
+  }
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -253,9 +234,9 @@ export async function fetchHolidays() {
       { signal: AbortSignal.timeout(8000) }
     );
     const j = await r.json();
-    setHolidaySet(new Set(
+    holidaySet = new Set(
       (j.data || []).filter(h => !h.atNormalTime).map(h => h.eventDay)
-    ));
+    );
     console.log('[Holiday] 로드 완료:', holidaySet.size, '일');
   } catch (e) {
     console.warn('[Holiday] 로드 실패:', e.message);

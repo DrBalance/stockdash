@@ -1,5 +1,5 @@
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// heatmap.js — Dealer Vanna/GEX 히트맵 렌더러 (Vanilla JS)
+// heatmap.js — Dealer Vanna/GEX 히트맵 렌더러 (가로 스크롤)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 /**
@@ -29,13 +29,13 @@ function renderHeatmap(data, containerId) {
 
   const { strikes, spotPrice, vanna, analysis, symbol } = data;
 
-  // 현재가 기준 ±5% 범위 필터링, 높은 가격이 위
+  // ±8% 범위 필터링 (프리마켓 대응), 낮은 → 높은 순 (왼쪽 → 오른쪽)
   const filtered = strikes
-    .filter(s => Math.abs(s.strike - spotPrice) / spotPrice < 0.05)
-    .sort((a, b) => b.strike - a.strike);
+    .filter(s => Math.abs(s.strike - spotPrice) / spotPrice < 0.08)
+    .sort((a, b) => a.strike - b.strike);
 
   if (filtered.length === 0) {
-    el.innerHTML = '<div style="color:var(--text3);font-size:12px;padding:8px">표시할 행사가 없음 (±5% 범위)</div>';
+    el.innerHTML = '<div style="color:var(--text3);font-size:12px;padding:8px">표시할 행사가 없음 (±8% 범위)</div>';
     return;
   }
 
@@ -49,42 +49,80 @@ function renderHeatmap(data, containerId) {
 
   const vannaSign = vanna < 0 ? 'var(--red)' : 'var(--blue, #3b82f6)';
 
-  const rows = filtered.map(s => {
-    const isSpot = Math.abs(s.strike - spotPrice) < 1;
-    const vannaVal = s.vanna != null ? s.vanna.toFixed(2) : '—';
-    const gexVal   = s.gex   != null ? (s.gex / 1e6).toFixed(2) + 'M' : '—';
-    const vannaNum = s.vanna != null ? s.vanna : ((s.callOI - s.putOI) * 0.1);
-    return `<tr style="${isSpot ? 'background:rgba(255,255,255,.06)' : ''}">
-      <td class="hm-td">${s.strike}${isSpot ? ' 📍' : ''}</td>
-      <td class="hm-td hm-center" style="background:${_hmColor(vannaNum)}">${vannaVal}</td>
-      <td class="hm-td hm-right">${gexVal}</td>
-    </tr>`;
+  // 현재가에 가장 가까운 열 인덱스
+  const spotIdx = filtered.reduce((best, s, i) => {
+    return Math.abs(s.strike - spotPrice) < Math.abs(filtered[best].strike - spotPrice) ? i : best;
+  }, 0);
+
+  // 각 행 셀 생성
+  const COL_W = 64;   // 데이터 열 너비 px
+  const LBL_W = 48;   // sticky 라벨 열 너비 px
+  const ROW_H_SM = 28; // Strike / GEX 행 높이
+  const ROW_H_LG = 56; // Vanna 행 높이
+
+  const strikeRow = filtered.map((s, i) => {
+    const isSpot = i === spotIdx;
+    const spotStyle = isSpot
+      ? `background:rgba(255,255,255,.1);border-left:1px solid var(--text2);border-right:1px solid var(--text2);`
+      : '';
+    return `<td class="hm-col${isSpot ? ' hm-col-spot' : ''}" style="min-width:${COL_W}px;max-width:${COL_W}px;height:${ROW_H_SM}px;text-align:center;font-size:11px;font-family:var(--mono);color:var(--text1);border-right:1px solid var(--border);${spotStyle}">${s.strike.toFixed(0)}</td>`;
   }).join('');
 
+  const vannaRow = filtered.map((s, i) => {
+    const isSpot = i === spotIdx;
+    const vannaNum = s.vanna != null ? s.vanna : ((s.callOI - s.putOI) * 0.1);
+    const vannaVal = s.vanna != null ? s.vanna.toFixed(2) : '—';
+    const spotStyle = isSpot
+      ? `border-left:1px solid var(--text2);border-right:1px solid var(--text2);`
+      : '';
+    return `<td class="hm-col${isSpot ? ' hm-col-spot' : ''}" style="min-width:${COL_W}px;max-width:${COL_W}px;height:${ROW_H_LG}px;text-align:center;font-size:12px;font-weight:700;font-family:var(--mono);color:#fff;background:${_hmColor(vannaNum)};border-right:1px solid rgba(255,255,255,.08);${spotStyle}">${vannaVal}</td>`;
+  }).join('');
+
+  const gexRow = filtered.map((s, i) => {
+    const isSpot = i === spotIdx;
+    const gexVal = s.gex != null ? (s.gex / 1e6).toFixed(2) + 'M' : '—';
+    const gexColor = s.gex > 0 ? 'var(--green, #3fb950)' : s.gex < 0 ? 'var(--red)' : 'var(--text3)';
+    const spotStyle = isSpot
+      ? `background:rgba(255,255,255,.1);border-left:1px solid var(--text2);border-right:1px solid var(--text2);`
+      : '';
+    return `<td class="hm-col${isSpot ? ' hm-col-spot' : ''}" style="min-width:${COL_W}px;max-width:${COL_W}px;height:${ROW_H_SM}px;text-align:center;font-size:11px;font-family:var(--mono);color:${gexColor};border-right:1px solid var(--border);${spotStyle}">${gexVal}</td>`;
+  }).join('');
+
+  // 공통 sticky 라벨 셀 스타일
+  const stickyCell = (text, height) =>
+    `<td style="position:sticky;left:0;z-index:2;min-width:${LBL_W}px;max-width:${LBL_W}px;height:${height}px;padding:0 4px;font-size:10px;font-weight:600;color:var(--text3);background:var(--bg, #0d1117);border-right:2px solid var(--border);white-space:nowrap;vertical-align:middle;text-align:right">${text}</td>`;
+
   el.innerHTML = `
-    <div class="hm-wrap">
-      <div class="hm-header">
-        <span class="hm-title">Dealer Exposure Heatmap${symbol ? ' · ' + symbol : ''}</span>
-        <span style="font-size:12px;color:var(--text3)">Total Vanna:
-          <span style="color:${vannaSign};font-family:var(--mono);font-weight:700">${vanna != null ? vanna + 'M' : '—'}</span>
-        </span>
+    <div class="hm-wrap" style="padding:12px 0 8px">
+      <div class="hm-header" style="padding:0 12px 8px;display:flex;align-items:center;justify-content:space-between">
+        <span class="hm-title" style="font-size:12px;font-weight:600;color:var(--text2)">Dealer Exposure Heatmap${symbol ? ' · ' + symbol : ''}</span>
+        <span style="font-size:12px;color:var(--text3)">Total Vanna:&nbsp;<span style="color:${vannaSign};font-family:var(--mono);font-weight:700">${vanna != null ? vanna + 'M' : '—'}</span></span>
       </div>
       ${alertBanner}
-      <div style="overflow-y:auto;max-height:320px;border:1px solid var(--border);border-radius:6px">
-        <table class="heatmap-table">
-          <thead>
-            <tr>
-              <th class="hm-th">Strike</th>
-              <th class="hm-th hm-center">Vanna Exposure</th>
-              <th class="hm-th hm-right">Net GEX</th>
-            </tr>
-          </thead>
-          <tbody>${rows}</tbody>
+      <div id="hm-scroll-${containerId}" style="overflow-x:auto;overflow-y:hidden;border-top:1px solid var(--border);border-bottom:1px solid var(--border)">
+        <table style="border-collapse:collapse;table-layout:fixed">
+          <tbody>
+            <tr>${stickyCell('Strike', ROW_H_SM)}${strikeRow}</tr>
+            <tr>${stickyCell('Vanna<br>Exp.', ROW_H_LG)}${vannaRow}</tr>
+            <tr>${stickyCell('Net<br>GEX', ROW_H_SM)}${gexRow}</tr>
+          </tbody>
         </table>
       </div>
-      <div class="hm-footer">
-        <span>📍 현재가 인접</span>
+      <div class="hm-footer" style="padding:5px 12px 0;display:flex;justify-content:space-between;font-size:10px;color:var(--text3)">
         <span>색상 농도 = 헤징 압력 강도</span>
+        <span>■ 파랑: Vanna 양수 &nbsp;■ 빨강: Vanna 음수</span>
       </div>
     </div>`;
+
+  // 현재가 열이 스크롤 컨테이너 중앙에 오도록 scrollLeft 조정
+  requestAnimationFrame(() => {
+    const scrollEl = document.getElementById(`hm-scroll-${containerId}`);
+    if (!scrollEl) return;
+    const spotCol = scrollEl.querySelector('.hm-col-spot');
+    if (!spotCol) return;
+    const containerW = scrollEl.clientWidth;
+    const colOffset  = spotCol.offsetLeft;
+    const colW       = spotCol.clientWidth;
+    scrollEl.scrollLeft = colOffset - containerW / 2 + colW / 2;
+  });
 }

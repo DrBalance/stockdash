@@ -55,8 +55,8 @@ async function load0DTE() {
 
     // KST 시간 문자열 (화면 표시용)
     const now = new Date();
-    const nowIsoStr = now.toISOString(); // UTC ISO — 저장 기준
-    const timeStr = toKST(nowIsoStr);   // KST 표시용
+    const nowIsoStr = new Date().toISOString();
+    const timeStr = window._kstStr || toKST(nowIsoStr);
 
     priceHistory.push({ time: timeStr, price: newSpot, marketState, vix: vixVal, vvix: vvixVal, ts: now.getTime() });
     if (priceHistory.length > 60) priceHistory.shift();
@@ -385,9 +385,10 @@ function render0DTE(d0, newSpot, marketState, preMarketPct, prevClose, timeStr) 
   renderOITop5(strikes);
 
   // 실시간 판단 이벤트 — 프리마켓~장 마감(EST 16:00)까지만 업데이트
-  const _nowEST = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
-  const _estH = _nowEST.getHours() + _nowEST.getMinutes() / 60;
-  const _isMarketHours = _estH >= 4 && _estH < 16; // 프리마켓 04:00 ~ 장 마감 16:00
+  // (Lee) const _nowEST = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
+  // (Lee) const _estH = _nowEST.getHours() + _nowEST.getMinutes() / 60;
+  // (Lee) const _isMarketHours = _estH >= 4 && _estH < 16; // 프리마켓 04:00 ~ 장 마감 16:00
+  const _isMarketHours = marketState !== 'CLOSED'; // (Lee) /added
   if (_isMarketHours) {
     const ctx0 = { marketState, priceLabel: `[${stateLabel}] $${spotDisplay}`, preMarketPct, prevClose, vix: vixVal };
     const liveEvts = buildLiveJudgment(newSpot || spotPrice, vc, currentD, ctx0, timeStr);
@@ -551,9 +552,7 @@ function buildLiveJudgment(newSpot, vc, d, ctx, timeStr) {
     ? (vixHistory[vixHistory.length-1] - vixHistory[0]) / vixHistory[0] * 100
     : 0;
 
-  const now = new Date();
-  const est = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
-  const estHour = est.getHours() + est.getMinutes()/60;
+  const estHour = window._etHour ?? 0;
 
   // 프리마켓 분석
   if (marketState === 'PRE' && prevClose && preMarketPct != null) {
