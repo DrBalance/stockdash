@@ -55,7 +55,7 @@ function renderHeatmap(data, containerId) {
   }, 0);
 
   // 각 행 셀 생성
-  const COL_W = 64;   // 데이터 열 너비 px
+  const COL_W = 72;   // 데이터 열 너비 px
   const LBL_W = 48;   // sticky 라벨 열 너비 px
   const ROW_H_SM = 28; // Strike / GEX 행 높이
   const ROW_H_LG = 56; // Vanna 행 높이
@@ -100,7 +100,7 @@ function renderHeatmap(data, containerId) {
       </div>
       ${alertBanner}
       <div id="hm-scroll-${containerId}" style="overflow-x:auto;overflow-y:hidden;border-top:1px solid var(--border);border-bottom:1px solid var(--border)">
-        <table style="border-collapse:collapse;table-layout:fixed">
+        <table style="border-collapse:collapse;table-layout:fixed;width:${filtered.length * COL_W + LBL_W}px">
           <tbody>
             <tr>${stickyCell('Strike', ROW_H_SM)}${strikeRow}</tr>
             <tr>${stickyCell('Vanna<br>Exp.', ROW_H_LG)}${vannaRow}</tr>
