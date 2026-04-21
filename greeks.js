@@ -89,17 +89,16 @@ export async function fetchCBOEChain(symbol) {
 // CBOE 심볼에서 가장 가까운 만기일 추출
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 function nearestExpiry(allOptions) {
-  const today = new Date();
   const dates = new Set();
   for (const o of allOptions) {
     const m = o.option.trim().match(/(\d{2})(\d{2})(\d{2})[CP]/);
     if (!m) continue;
     dates.add(`20${m[1]}-${m[2]}-${m[3]}`);
   }
-  // 오늘 이후 가장 가까운 날짜
+  // 오늘 이후 가장 가까운 날짜 (ET 기준)
   const sorted = [...dates].sort();
-  const todayISO = today.toISOString().slice(0, 10);
-  return sorted.find(d => d >= todayISO) ?? sorted[0];
+  const todayET = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+  return sorted.find(d => d >= todayET) ?? sorted[0];
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -136,15 +135,20 @@ export function computeGreeks(cboeJson) {
   }
   const strikes = Object.values(map).sort((a, b) => a.strike - b.strike);
 
-  function getExpiryCloseUTC(iso) {
-    const [y, m, d] = iso.split('-').map(Number);
-    const utcHour = (m >= 4 && m <= 10) ? 20 : 21;
-    return new Date(Date.UTC(y, m - 1, d, utcHour, 0, 0));
-  }
-  const expiryClose = getExpiryCloseUTC(targetISO);
-  const msToExp = expiryClose - new Date();
-  const T = msToExp > 0 ? msToExp / (1000 * 60 * 60 * 24 * 365) : 1 / 8760;
-  const sqrtT  = Math.sqrt(T);
+  // T 계산 — ET 기준으로 일관되게 처리 (UTC 변환 없음)
+  // ET 14:00 이후로는 T를 고정 (만기까지 2시간):
+  // Charm = -nd1 * (...) / T 이므로 T→0 시 폭발하는 수학적 특성이 있음.
+  // 그러나 14:00 이후의 Charm 급등은 지표로서 의미가 없고 노이즈에 가까움.
+  // 따라서 14:00 시점의 T(= 2시간)를 상한으로 고정하여 폭발을 방지함.
+  // 원본 데이터(OI, IV)는 그대로이며 Vanna/GEX는 영향 없음.
+  const nowET    = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
+  const [ey, em, ed] = targetISO.split('-').map(Number);
+  const expiryET  = new Date(ey, em - 1, ed, 16, 0, 0); // 만기일 ET 16:00
+  const cutoffET  = new Date(ey, em - 1, ed, 14, 0, 0); // Charm 폭발 방지 컷오프 ET 14:00
+  const refET     = nowET > cutoffET ? cutoffET : nowET;
+  const msToExp   = expiryET - refET;
+  const T         = msToExp / (1000 * 60 * 60 * 24 * 365);
+  const sqrtT     = Math.sqrt(T);
   const r_rate = 0.045;
   let totalVanna = 0, totalCharm = 0;
 
