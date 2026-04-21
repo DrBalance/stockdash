@@ -385,13 +385,13 @@ function renderVCChart() {
       const { ctx, chartArea } = chart;
       const label = labelFn(data[lastIdx]);
       ctx.save();
-      ctx.font = 'bold 10px monospace';
+      ctx.font = 'bold 11px Arial';
       const tw = ctx.measureText(label).width;
       const x = Math.min(pt.x + 4, chartArea.right - tw - 4);
       const y = pt.y + offsetY; // 위 또는 아래
       ctx.fillStyle = color;
       ctx.globalAlpha = 0.85;
-      ctx.fillRect(x - 2, y - 8, tw + 6, 16);
+      ctx.fillRect(x - 2, y - 9, tw + 6, 18);
       ctx.globalAlpha = 1;
       ctx.fillStyle = '#0d1117';
       ctx.textAlign = 'left';
@@ -554,14 +554,14 @@ function renderVCChart() {
     }
   }
 
-  // ── 페인3: VOLD ──
+  // ── 페인3: OBV ──
   const obvEl = document.getElementById('vc-pane-obv');
   const hasVOLD = voldD.some(v => v != null);
   if (obvEl) {
     if (!hasVOLD) {
-      obvEl.parentElement.innerHTML = '<div style="height:220px;display:flex;align-items:center;justify-content:center;color:var(--text3);font-size:12px">VOLD — Cron 적재 대기 (서버 1분 Cron)</div>';
+      obvEl.parentElement.innerHTML = '<div style="height:220px;display:flex;align-items:center;justify-content:center;color:var(--text3);font-size:12px">OBV — Cron 적재 대기 (서버 1분 Cron)</div>';
     } else {
-      const opts = commonOpts('#3fb950', item => `VOLD: ${item.parsed.y != null ? (item.parsed.y >= 0 ? '+' : '') + item.parsed.y.toFixed(2) + 'M' : '—'}`);
+      const opts = commonOpts('#3fb950', item => `OBV: ${item.parsed.y != null ? (item.parsed.y >= 0 ? '+' : '') + item.parsed.y.toFixed(2) + 'M' : '—'}`);
       opts.scales.y.ticks.callback = v => {
         if (v == null) return '';
         const abs = Math.abs(v), sign = v < 0 ? '-' : '+';
@@ -574,7 +574,7 @@ function renderVCChart() {
         type: 'line', data: {
           labels,
           datasets: [{
-            label: 'VOLD',
+            label: 'OBV',
             data: voldD,
             segment: {
               borderColor: ctx => (ctx.p1?.parsed?.y ?? 0) >= 0 ? '#3fb950' : '#f85149',
@@ -587,7 +587,7 @@ function renderVCChart() {
         options: opts,
         plugins: [
           sessionPlugin(labels),
-          endLabelPlugin(0, v => `VOLD: ${v >= 0 ? '+' : ''}${v?.toFixed(2)}M`, lastVOLD >= 0 ? '#3fb950' : '#f85149', -14),
+          endLabelPlugin(0, v => `OBV: ${v >= 0 ? '+' : ''}${v?.toFixed(2)}M`, lastVOLD >= 0 ? '#3fb950' : '#f85149', -14),
           stickyYPlugin('vc-pane-obv-wrap', '#3fb950', v => {
             if (v == null) return '';
             const abs = Math.abs(v), sign = v < 0 ? '-' : '+';
@@ -610,79 +610,7 @@ function renderVCChart() {
     wrap.addEventListener('scroll', wrap._vcScrollHandler, { passive: true });
   }
 
-  // 신호등 업데이트
-  updateVCSignalBar(vcHistory.slice(-5));
-
   // zoom/스크롤 적용
   requestAnimationFrame(() => updateVCZoom());
 }
 
-function updateVCSignalBar(slice) {
-  if (slice.length < 3) return;
-  const last = slice[slice.length - 1];
-  const prev5 = slice.length >= 5 ? slice[slice.length - 5] : slice[0];
-
-  const vv = last.vv ?? 0;
-  const voldCur  = last.vold  ?? 0;
-  const voldPrev = prev5.vold ?? 0;
-  const voldDelta = voldCur - voldPrev;
-
-  const spotCur  = last.spot  ?? 0;
-  const spotPrev = prev5.spot ?? 0;
-  const priceDn  = spotCur < spotPrev;
-
-  let signalType = 'neutral', msg = '', color = 'var(--text3)';
-
-  const hedgeSignal   = priceDn && Math.abs(voldDelta) < Math.abs(voldCur) * 0.05;
-
-  const fmtVold = v => {
-    const abs = Math.abs(v), sign = v < 0 ? '-' : '+';
-    if (abs >= 1000) return sign + (abs/1000).toFixed(1) + 'B';
-    return sign + abs.toFixed(1) + 'M';
-  };
-
-  if (hedgeSignal) {
-    signalType = 'yellow'; msg = `지수 하락 + VOLD 플랫/증가 — 옵션 청산/딜러 헷지 매도 의심`; color = 'var(--yellow)';
-  } else if (priceDn && voldDelta > 0) {
-    signalType = 'yellow'; msg = `지수 하락 + VOLD 증가 — 옵션 청산/딜러 헷지 매도 의심`; color = 'var(--yellow)';
-  } else if (vv > 0.05 && voldDelta < 0) {
-    signalType = 'red'; msg = `VV +${vv.toFixed(3)} · VOLD ↓ ${fmtVold(voldCur)} 수급 이탈 → 실제 하락 압력 확인`; color = 'var(--red)';
-  } else if (vv > 0.05 && voldDelta >= 0) {
-    signalType = 'yellow'; msg = `VV +${vv.toFixed(3)} · VOLD ${fmtVold(voldCur)} 유지 → 헷지 노이즈 가능, 추세 지속 확인 필요`; color = 'var(--yellow)';
-  } else if (vv < -0.05 && voldDelta > 0) {
-    signalType = 'green'; msg = `VV ${vv.toFixed(3)} · VOLD ↑ ${fmtVold(voldCur)} 수급 유입 → 상승 환경 확인`; color = 'var(--green)';
-  } else if (vv < -0.05 && voldDelta <= 0) {
-    signalType = 'yellow'; msg = `VV ${vv.toFixed(3)} · VOLD ${fmtVold(voldCur)} → VIX만 하락, 수급 미확인`; color = 'var(--yellow)';
-  } else {
-    signalType = 'neutral'; msg = `VV ${vv.toFixed(3)} · VOLD ${fmtVold(voldCur)} 중립 → 방향 대기`; color = 'var(--text3)';
-  }
-
-  // 애니메이션 인디케이터 업데이트
-  const indEl = document.getElementById('vc-signal-indicator');
-  if (indEl) {
-    const styleMap = {
-      green:   { bg: '#3fb950', anim: 'glow-green 1.5s ease-in-out infinite', radius: '3px' },
-      red:     { bg: '#f85149', anim: 'glow-red 1.2s ease-in-out infinite',   radius: '3px' },
-      yellow:  { bg: '#d29922', anim: 'glow-yellow 1.8s ease-in-out infinite', radius: '3px' },
-      neutral: { bg: 'var(--text3)', anim: 'pulse 2s ease-in-out infinite',   radius: '3px' },
-    };
-    const s = styleMap[signalType] || styleMap.neutral;
-    indEl.style.background = s.bg;
-    indEl.style.animation  = s.anim;
-    indEl.style.borderRadius = s.radius;
-  }
-
-  const textEl = document.getElementById('vc-signal-text');
-  if (textEl) { textEl.textContent = msg; textEl.style.color = color; textEl.style.fontWeight = signalType !== 'neutral' ? '700' : '500'; }
-
-  // 실시간 판단 패널 push (중요 신호만)
-  const evTimeStr = window._kstStr || toKST(new Date().toISOString());
-  if (signalType === 'red' || signalType === 'green') {
-    liveEvents.unshift({ time: evTimeStr + ' KST', cls: signalType === 'red' ? 'le-warn' : 'le-good', msg });
-    if (liveEvents.length > 15) liveEvents = liveEvents.slice(0, 15);
-  }
-  if (signalType === 'yellow' && hedgeSignal) {
-    liveEvents.unshift({ time: evTimeStr + ' KST', cls: 'le-warn', msg });
-    if (liveEvents.length > 15) liveEvents = liveEvents.slice(0, 15);
-  }
-}
