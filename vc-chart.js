@@ -282,8 +282,9 @@ function renderVCChart() {
   vcTotalSlots = TOTAL_SLOTS;
 
   // 오늘 날짜(EST 기준) + 04:00 EST의 UTC 시각 계산
-  const nowEST_c = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
-  const todayStrEST = nowEST_c.toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+  // ※ new Date(toLocaleString(...)) 방식은 브라우저마다 날짜 파싱이 달라 하루 오차 발생
+  //   → toLocaleDateString('en-CA')를 직접 사용해 YYYY-MM-DD 추출
+  const todayStrEST = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
   // "2026-04-17T04:00:00" + America/New_York → UTC ISO 배열 생성
   const preStartUTC = new Date(`${todayStrEST}T${String(PRE_START_EST).padStart(2,'0')}:00:00`);
   // EST offset: EDT=-4, EST=-5 → UTC = localTime + offset
