@@ -49,21 +49,22 @@ export function registerRoutes(app) {
   });
 
   // ── GEX 0DTE (Greeks + Strikes 통합)
-  // 캐시 있으면 즉시 반환, 없으면 CBOE on-demand 계산 후 캐시에 저장
+  // 캐시 있으면 즉시 반환, 없으면 CBOE on-demand 계산 (state 덮어쓰기 안 함 — Diff 보존)
   app.get('/api/gex0dte', async (req, res) => {
     const sym = (req.query.symbol || 'SPY').toUpperCase();
     let greeks  = state.greeks[sym];
     let strikes = state.strikes[sym];
+    let source  = 'cron_computed';
 
     if (!greeks || !strikes) {
       try {
         console.log('[gex0dte] 캐시 없음 — CBOE on-demand fetch:', sym);
         const cboeJson = await fetchCBOEChain(sym);
         const result   = computeGreeks(cboeJson);
-        state.greeks[sym]  = result;
-        state.strikes[sym] = result.strikes;
+        // state는 건드리지 않음 — Cron이 쌓은 Diff(prevSnap/baseSnap) 보존
         greeks  = result;
         strikes = result.strikes;
+        source  = 'on_demand';
       } catch (e) {
         console.error('[gex0dte] on-demand 실패:', e.message);
         return res.json({ error: e.message, symbol: sym });
@@ -71,7 +72,7 @@ export function registerRoutes(app) {
     }
 
     const { strikes: _s, ...summary } = greeks;
-    res.json({ ...summary, strikes, source: state.greeks[sym].computedAt ? 'cron_computed' : 'on_demand' });
+    res.json({ ...summary, strikes, source });
   });
 
   // ── VC 히스토리 (Vanna/Charm 시계열)
