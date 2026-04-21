@@ -84,10 +84,30 @@ export function connectFinnhub() {
     try {
       const msg = JSON.parse(raw.toString());
       if (msg.type !== 'trade' || !Array.isArray(msg.data)) return;
+
+      // ── 임시 확인용 로그 — trade.v 필드 존재 여부 확인 후 제거 ──
+      if (!state.obv._sampled) {
+        console.log('[Finnhub Sample]', JSON.stringify(msg.data[0]));
+        state.obv._sampled = true;
+      }
+
       const updated = {};
       for (const trade of msg.data) {
-        const sym = trade.s, price = trade.p;
+        const sym = trade.s, price = trade.p, vol = trade.v ?? 0;
         if (!sym || price == null) continue;
+
+        // ── SPY OBV 실시간 누적 (VOLD 대체) ──
+        // Finnhub WebSocket trade.v 활용 — 추가 API 호출 없음
+        // 가격 상승 시 +vol, 하락 시 -vol, 동일 시 변화 없음
+        if (sym === 'SPY' && vol > 0) {
+          const prevPrice = state.obv.lastPrice;
+          if (prevPrice != null) {
+            if (price > prevPrice)      state.obv.value += vol;
+            else if (price < prevPrice) state.obv.value -= vol;
+          }
+          state.obv.lastPrice = price;
+        }
+
         const prev = state.prices[sym];
         state.prices[sym] = {
           price,
@@ -259,26 +279,20 @@ export async function cronMarket() {
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// cronMarketVold — UVOL/DVOL (정규장 09~16시만)
+// cronMarketOBV — SPY OBV broadcast (정규장 09~16시)
+// Finnhub WebSocket에서 실시간 누적된 OBV를 1분마다 broadcast
+// UVOL/DVOL 야후 미제공으로 OBV로 대체 — 추가 API 호출 없음
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-export async function cronMarketVold() {
-  let uvolNow = null, dvolNow = null;
-  try { const q = await fetchYahooQuote('C:UVOL'); uvolNow = q.volume ?? q.price; console.log('[Cron] UVOL:', uvolNow); }
-  catch (e) { console.warn('[Cron] UVOL 실패:', e.message); }
-  try { const q = await fetchYahooQuote('C:DVOL'); dvolNow = q.volume ?? q.price; console.log('[Cron] DVOL:', dvolNow); }
-  catch (e) { console.warn('[Cron] DVOL 실패:', e.message); }
-
-  if (uvolNow != null && dvolNow != null) {
-    const vold = Math.round(uvolNow - dvolNow);
-    console.log('[Cron] VOLD:', vold);
-    state.market = {
-      ...state.market,
-      vold,
-      uvol: Math.round(uvolNow),
-      dvol: Math.round(dvolNow),
-    };
-    broadcast('market', state.market);
-  }
+export function cronMarketOBV() {
+  const obv = state.obv.value;
+  console.log('[Cron] OBV:', obv);
+  state.market = {
+    ...state.market,
+    vold: obv,   // 기존 vold 필드 재사용 — 클라이언트 호환 유지
+    uvol: null,
+    dvol: null,
+  };
+  broadcast('market', state.market);
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
